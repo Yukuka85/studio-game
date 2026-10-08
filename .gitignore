@@ -1,5 +1,6 @@
 # данные таблицы и всё, что их содержит — в публичный репо не кладём
 prototype/data.json
+prototype/config.json
 prototype/studio.html
 *.snapshot.json
 # референсы чужие, спецификация внутренняя
@@ -10,3 +11,5 @@ SPEC.md
 __pycache__/
 node_modules/
 dist/
+prototype/preview.html
+.claude/

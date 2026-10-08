@@ -14,8 +14,6 @@ import office  # noqa: E402  — палитры и шаблоны портрет
 
 SECTIONS = {"В РАБОТЕ": "work", "ПАУЗА": "pause", "ВЫИГРАЛИ": "won",
             "ПРОИГРАЛИ И ЯМА НЕИЗВЕСТНОСТИ": "lost", "ОТПУСКА": "vacation"}
-SHORT = {"Вадим Кампель": "Вадим", "Даниил Гудков": "Даня", "Алёна Мельник": "Алёна", "Юлия Кочебина": "Юля",
-         "Оксана Моисеева": "Оксана", "Татьяна Хина": "Таня", "Фриланс": "Фриланс"}
 
 
 def num(s):
@@ -26,6 +24,9 @@ def num(s):
 
 
 def main():
+    cfg = json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json"),
+                         encoding="utf-8"))
+    SHORT = cfg["short"]
     d = values(["Неделя!B4:AB399", "Команда!B5:G11", "Проекты!B5:O200"])
     week, team, projects_sheet = d["Неделя!B4:AB399"], d["Команда!B5:G11"], d["Проекты!B5:O200"]
     dates = week[0][7:27]
@@ -80,7 +81,7 @@ def main():
     inbox = [{"name": n, "stage": ex["stage"], "deadline": ex["deadline"], "manager": ex["manager"]}
              for n, ex in extra.items()
              if n not in in_week and ex["stage"] in ("Бриф", "Креатив", "Дизайн", "Защита", "Правки")]
-    out = {"snapshot": datetime.datetime.now().strftime("%d.%m.%Y %H:%M"), "days": days,
+    out = {"config": cfg, "snapshot": datetime.datetime.now().strftime("%d.%m.%Y %H:%M"), "days": days,
            "people": people, "projects": projects, "inbox": inbox}
     json.dump(out, sys.stdout, ensure_ascii=False)
 
