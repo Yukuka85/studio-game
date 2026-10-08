@@ -1,0 +1,12 @@
+# данные таблицы и всё, что их содержит — в публичный репо не кладём
+prototype/data.json
+prototype/studio.html
+*.snapshot.json
+# референсы чужие, спецификация внутренняя
+refs/
+SPEC.md
+# прочее
+.DS_Store
+__pycache__/
+node_modules/
+dist/
