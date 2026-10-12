@@ -14,3 +14,5 @@ dist/
 prototype/preview.html
 .claude/
 prototype/assets/
+# внешность реальных людей — не в публичный репо
+art/characters-prompts.md
