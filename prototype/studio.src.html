@@ -598,6 +598,15 @@ function sprite(p, o = {}) {
     if (r >= 13) { if (v === skin && !back) continue; put(r, c, v); if (back && r === 15 && rows > 17) { put(16, c, v); put(17, c, v); } continue; }
     put(r, c, v);
   }
+  // просветы между прядями у длинных волос (спереди и сбоку) — это волосы за спиной, а не дырка
+  if (!back) {
+    const hair = C.h || C.k || C.n, hairs = new Set([C.h, C.l, C.d, C.n].filter(Boolean));
+    for (let r = 8; r < Math.min(16, rows); r++) {
+      const idx = g[r].map((v, c) => hairs.has(v) ? c : -1).filter(c => c >= 0);
+      if (idx.length < 2) continue;
+      for (let c = idx[0]; c <= idx[idx.length - 1]; c++) if (!g[r][c]) g[r][c] = tone(hair, .62);
+    }
+  }
   if (o.cat && !back && !side) H.cat.forEach(([r, c, col]) => put(r, c, col));
   let cv0 = document.createElement("canvas"); cv0.width = 20; cv0.height = rows;
   let x = cv0.getContext("2d");
