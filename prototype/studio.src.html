@@ -306,6 +306,9 @@ select.pbtn { appearance: none; padding-right: 22px; background-image: linear-gr
 
 <script type="application/json" id="data">__DATA__</script>
 <script type="text/plain" id="bgsrc">__BG__</script>
+<script type="text/plain" id="atlassrc">__ATLAS__</script>
+<script type="application/json" id="atlasmap">__ATLASMAP__</script>
+<script type="text/plain" id="wheelsrc">__WHEEL__</script>
 <script>
 "use strict";
 const DATA = JSON.parse(document.getElementById("data").textContent);
@@ -491,180 +494,75 @@ const snd = (() => {
   };
 })();
 
-/* ================= пиксели: человечки ================= */
-// Головы — из пиксельных портретов команды (20 клеток в ширину). Тело дорисовывается под позу:
-// стоя спереди/сзади/сбоку, шаг, сидя спиной/лицом/боком, лёжа. Боком смотрят вправо, влево — отражение.
-const FREE_HEAD = ["....................", "......nnnnnnnn......", ".....nnnnnnnnnn.....", "....nnnnnnnnnnnn....", "....nnssssssssnn....", "....nnsessssesnn....", "....nnssssssssnn....", "....nnsssmmsssnn....", "....nnnssssssnnn....", ".....nnnnnnnnnn.....", "......nnnnnnnn......", "....................", "........ssss........"];
-const FREE_COLORS = { n: "#6B6F9A", s: "#E8C3A3", e: "#2B2A33", m: "#B5524A", c: "#6B6F9A", t: "#585C86", h: "#6B6F9A" };
-const tone = (hex, k) => "#" + [1, 3, 5].map(i => Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(i, i + 2), 16) * k))).toString(16).padStart(2, "0")).join("");
-const headCache = new Map();
-function heads(p) {
-  if (headCache.has(p.name)) return headCache.get(p.name);
-  const colors = p.colors || FREE_COLORS, tpl = p.head || FREE_HEAD;
-  const front = Array.from({ length: 16 }, () => Array(20).fill(null)), back = Array.from({ length: 16 }, () => Array(20).fill(null)), cat = [];
-  const hair = colors.h || colors.k || colors.n;
-  tpl.forEach((line, r) => [...line].forEach((ch, c) => {
-    if (ch === ".") return;
-    let col = colors[ch];
-    if (ch === "K" || (ch === "y" && has(p, "catOwner"))) { cat.push([r, c, col]); return; }
-    if (has(p, "curls") && ch === "h" && (r * 3 + c) % 4 === 0) col = colors.d;
-    front[r][c] = col;
-    let b;
-    if (r <= 4 && "kwev".includes(ch)) b = colors.k || hair;
-    else if (ch === "k" || ch === "n") b = colors[ch];
-    else if (r >= 12 && ch === "s") b = col;
-    else if (ch === "y") b = null;
-    else b = hair;
-    if (b === hair && has(p, "curls") && (r * 3 + c) % 4 === 0) b = colors.d;
-    back[r][c] = b;
-  }));
-  // затылок сплошной: заливаем просветы между прядями (иначе со спины видна «дырка» от лица и шеи)
-  back.forEach((row, r) => {
-    const idx = row.map((v, c) => v ? c : -1).filter(c => c >= 0);
-    if (idx.length < 2) return;
-    for (let c = idx[0]; c <= idx[idx.length - 1]; c++) if (!row[c] || (r < 12 && row[c] === colors.s)) row[c] = has(p, "curls") && (r * 3 + c) % 4 === 0 ? colors.d : hair;
-  });
-  // профиль: затылок слева, лицо справа + нос
-  const side = front.map((row, r) => row.map((v, c) => c < 10 ? back[r][c] : v));
-  const eyeRow = front.findIndex(row => row.some(v => v === colors.e));
-  if (eyeRow >= 0) { const row = side[eyeRow + 1]; let last = -1; row.forEach((v, c) => { if (v) last = c; }); if (last >= 0 && last < 19) row[last + 1] = colors.s; }
-  const out = { front, back, side, cat, colors };
-  headCache.set(p.name, out); return out;
+/* ================= спрайты из атласа ================= */
+// Персонажи, стулья, кот, самоед и мелочи нарисованы в одном стиле и собраны в атлас (assets/atlas.png).
+// Масштаб отрисовки задаём в пикселях фона (2000×1493): человек стоя ≈ 230 px, стул ≈ 155 px.
+const ATLAS = new Image(); let atlasReady = false;
+ATLAS.onload = () => { atlasReady = true; }; ATLAS.src = document.getElementById("atlassrc").textContent.trim();
+const AMAP = JSON.parse(document.getElementById("atlasmap").textContent);
+const WHEEL = new Image(); WHEEL.src = document.getElementById("wheelsrc").textContent.trim();
+const SLUG = p => (CFG.sprites || {})[p.name] || "free";
+const scaleOf = key => key.startsWith("c_") ? .85 : key.startsWith("chair") ? .56 : key.startsWith("cat") ? .75 : key.startsWith("dog") ? .8 : .5;
+function fkey(p, pose) {
+  const s = SLUG(p);
+  for (const k of [`c_${s}_${pose}`, ...(pose === "sitFront" ? [`c_${s}_sitSide`] : []), `c_${s}_stand`]) if (AMAP[k]) return k;
+  return null;
 }
-const spriteCache = new Map();
-function sprite(p, o = {}) {
-  const pose = o.pose || "stand", key = p.name + "|" + pose + "|" + (o.back ? 1 : 0) + (o.phase || 0) + (o.cat ? 1 : 0);
-  if (spriteCache.has(key)) return spriteCache.get(key);
-  const H = heads(p), C = H.colors, sit = pose.startsWith("sit"), side = pose === "standSide" || pose === "walkSide" || pose === "sitSide";
-  const rows = pose === "sitBack" ? 20 : sit ? 25 : 29;
-  const g = Array.from({ length: rows }, () => Array(20).fill(null));
-  const put = (r, c, col) => { if (r >= 0 && r < rows && c >= 0 && c < 20 && col) g[r][c] = col; };
-  const back = !!o.back || pose === "sitBack";
-  const curls = has(p, "curls"), plaid = p.plaid && !curls;
-  const skin = C.s || "#EFC9AC", shirt = C.c || "#6B6F9A", tee = C.t && C.t !== C.c ? C.t : null;
-  const pants = has(p, "darkPants") ? "#1E1E22" : p.colors ? "#3B4A6B" : "#55597E", shoe = p.colors ? "#2B2B33" : "#E8E4F0";
-  const sleeve = (r, c) => curls ? ((r + c) % 2 ? C.p : tone(C.p, .75)) : plaid && r % 3 === 0 ? C.p : shirt;
-  const tors = (r, c) => { if (!back && tee && c >= 8 && c <= 11 && r <= 18) return tee; if (plaid && (c === 6 || c === 13 || r % 3 === 1)) return C.p; return shirt; };
-  const tEnd = sit ? 19 : 21;
-  if (!side) {
-    for (let r = 13; r <= tEnd; r++) for (let c = 5; c <= 14; c++) put(r, c, tors(r, c));
-    put(13, 4, sleeve(13, 4)); put(13, 15, sleeve(13, 15));
-    const armEnd = pose === "sitFront" ? 17 : pose === "sitBack" ? 18 + ((o.phase || 0) % 2) : 20;
-    for (let r = 14; r <= armEnd; r++) { put(r, 3, sleeve(r, 3)); put(r, 4, sleeve(r, 4)); put(r, 15, sleeve(r, 15)); put(r, 16, sleeve(r, 16)); }
-    if (pose === "sitBack" && (o.phase || 0) % 2) { put(18, 3, null); put(18, 4, null); }
-    if (!sit) { [3, 4, 15, 16].forEach(c => put(21, c, skin)); for (let c = 5; c <= 14; c++) put(21, c, "#2B2B33"); }
-    if (pose === "sitFront") {
-      for (let c = 5; c <= 7; c++) put(18, c, sleeve(18, c)); for (let c = 12; c <= 14; c++) put(18, c, sleeve(18, c));
-      [8, 9, 10, 11].forEach(c => put(19, c, skin));
-      for (let r = 20; r <= 21; r++) for (let c = 5; c <= 14; c++) put(r, c, pants);
-      for (let r = 22; r <= 23; r++) { [6, 7, 8, 11, 12, 13].forEach(c => put(r, c, pants)); }
-      [5, 6, 7, 8, 11, 12, 13, 14].forEach(c => put(24, c, shoe));
-    }
-    if (!sit) {
-      const lift = pose === "walk" ? (o.phase === 1 ? "L" : "R") : null;
-      const leg = (c0, up) => { const bottom = up ? 26 : 27; for (let r = 22; r <= bottom; r++) for (let c = c0; c < c0 + 4; c++) put(r, c, c === c0 + 3 && c0 === 6 ? tone(pants, .8) : pants); for (let c = c0 - (c0 === 6 ? 1 : 0); c < c0 + 4 + (c0 === 10 ? 1 : 0); c++) put(bottom + 1, c, shoe); };
-      leg(6, lift === "L"); leg(10, lift === "R");
-    }
-  } else {
-    for (let r = 13; r <= tEnd; r++) for (let c = 7; c <= 12; c++) put(r, c, tee && c === 12 && r <= 17 ? tee : tors(r, c));
-    if (pose === "sitSide") {
-      for (let r = 15; r <= 16; r++) for (let c = 10; c <= 15; c++) put(r, c, sleeve(r, c)); put(15, 16, skin); put(16, 16, skin);
-      for (let r = 20; r <= 21; r++) for (let c = 7; c <= 15; c++) put(r, c, pants);
-      for (let r = 22; r <= 23; r++) { put(r, 14, pants); put(r, 15, pants); }
-      for (let c = 14; c <= 17; c++) put(24, c, shoe);
-    } else {
-      const walkA = pose === "walkSide" && o.phase === 1;
-      const armC = walkA ? 8 : 9;
-      for (let r = 14; r <= 20; r++) for (let c = armC; c <= armC + 2; c++) put(r, c, tone(sleeve(r, c), .9));
-      put(21, armC + 1, skin); put(21, armC + 2, skin);
-      for (let c = 7; c <= 12; c++) put(21, c, g[21][c] || "#2B2B33");
-      if (walkA) {
-        for (let r = 22; r <= 24; r++) for (let c = 9; c <= 11; c++) put(r, c, pants);
-        for (let r = 25; r <= 27; r++) for (let c = 11; c <= 13; c++) put(r, c, pants);
-        for (let c = 11; c <= 15; c++) put(28, c, shoe);
-        for (let r = 22; r <= 24; r++) for (let c = 7; c <= 9; c++) put(r, c, tone(pants, .8));
-        for (let r = 25; r <= 27; r++) for (let c = 5; c <= 7; c++) put(r, c, tone(pants, .8));
-        for (let c = 4; c <= 7; c++) put(28, c, shoe);
-      } else {
-        for (let r = 22; r <= 27; r++) for (let c = 8; c <= 11; c++) put(r, c, pants);
-        for (let c = 8; c <= 13; c++) put(28, c, shoe);
-      }
-    }
-  }
-  // голова и волосы поверх плеч
-  const head = side ? H.side : back ? H.back : H.front;
-  for (let r = 0; r < 16; r++) for (let c = 0; c < 20; c++) {
-    const v = head[r][c]; if (!v) continue;
-    if (r >= 13) { if (v === skin && !back) continue; put(r, c, v); if (back && r === 15 && rows > 17) { put(16, c, v); put(17, c, v); } continue; }
-    put(r, c, v);
-  }
-  // просветы между прядями у длинных волос (спереди и сбоку) — это волосы за спиной, а не дырка
-  if (!back) {
-    const hair = C.h || C.k || C.n, hairs = new Set([C.h, C.l, C.d, C.n].filter(Boolean));
-    for (let r = 8; r < Math.min(16, rows); r++) {
-      const idx = g[r].map((v, c) => hairs.has(v) ? c : -1).filter(c => c >= 0);
-      if (idx.length < 2) continue;
-      for (let c = idx[0]; c <= idx[idx.length - 1]; c++) if (!g[r][c]) g[r][c] = tone(hair, .62);
-    }
-  }
-  if (o.cat && !back && !side) H.cat.forEach(([r, c, col]) => put(r, c, col));
-  let cv0 = document.createElement("canvas"); cv0.width = 20; cv0.height = rows;
-  let x = cv0.getContext("2d");
-  g.forEach((row, r) => row.forEach((col, c) => { if (col) { x.fillStyle = col; x.fillRect(c, r, 1, 1); } }));
-  if (pose === "lie") {
-    const rc = document.createElement("canvas"); rc.width = rows; rc.height = 20;
-    const rx = rc.getContext("2d"); rx.translate(0, 20); rx.rotate(-Math.PI / 2); rx.drawImage(cv0, 0, 0); cv0 = rc;
-  }
-  spriteCache.set(key, cv0);
-  return cv0;
+// размер спрайта в логических точках (1 точка = 5 px фона)
+function dims(key) { const f = AMAP[key]; if (!f) return [20, 30]; const k = scaleOf(key) / 5; return [f[2] * k, f[3] * k]; }
+// нарисовать спрайт: x, y — низ по центру (ноги/колёсики), face −1 — отражение; rot — поворот (лёжа)
+function blit(c2, key, x, y, face = 1, rot = 0) {
+  const f = AMAP[key]; if (!f || !atlasReady) return;
+  const [w, h] = dims(key);
+  c2.save(); c2.translate(x, y);
+  if (rot) { c2.rotate(rot); c2.drawImage(ATLAS, f[0], f[1], f[2], f[3], -w / 2, -h / 2, w, h); c2.restore(); return; }
+  if (face < 0) c2.scale(-1, 1);
+  c2.drawImage(ATLAS, f[0], f[1], f[2], f[3], -w / 2, -h, w, h);
+  c2.restore();
 }
 
 /* ================= сцена ================= */
-// Фон — нарисованная картинка студии (2000×1493). Логическая сетка 400×299: 1 точка = 5 пикселей картинки.
-// Люди и кот — пиксельные спрайты на своей сетке (1 клетка = 8 пикселей картинки), поверх фона и доски.
-// Спинки стульев и дивана перерисовываются кусками фона поверх сидящих.
+// Фон — нарисованная студия (2000×1493, без стульев). Логическая сетка 400×299: 1 точка = 5 пикселей фона.
 const W = 400, H = 299, IMG_W = 2000;
-const GK = 5 / 8, GW = 250, GH = 187, CELL = 8 / 5;   // логическая точка → клетка спрайтов
 const BG = new Image(); let bgReady = false;
 BG.onload = () => { bgReady = true; }; BG.src = document.getElementById("bgsrc").textContent.trim();
-const objC = document.createElement("canvas"); objC.width = GW; objC.height = GH;
-const og = objC.getContext("2d", { willReadFrequently: true });
 const cv = $("#cv"), ctx = cv.getContext("2d");
 const cv2 = $("#cv2"), ctx2 = cv2.getContext("2d");
-let G = og;
-const R = (x, y, w, h, c) => { G.fillStyle = c; G.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
-const OUTLINE = [24, 18, 40];
-const im = v => v / 5;   // пиксели картинки → логические точки
+const sprC = document.createElement("canvas"), sx2 = sprC.getContext("2d");
+let G = ctx;
+const R = (x, y, w, h, c) => { G.fillStyle = c; G.fillRect(x, y, w, h); };
+const im = v => v / 5;   // пиксели фона → логические точки
 
-// Места за столами (по порядку людей). x, y — точка опоры (низ спрайта: ноги или сиденье), в пикселях картинки → логических.
-// occ — спинка стула (пиксели картинки), её рисуем поверх сидящего. glow — где светится экран.
-// cat — точка на столе (кот, открытка из отпуска, пицца), mug — нарисованная кружка, plate — табличка.
+// Рабочие места (по порядку людей). x, y — низ спрайта сидящего; chair — стул (низ колёсиков), вид и поворот.
+// back: стул спинкой к нам — рисуется поверх человека. side: стул боком — под человеком.
 const SEATS = [
-  { x: im(435), y: im(476), pose: "sitBack", plate: [im(435), im(566)], occ: [368, 420, 134, 128], glow: [[im(360), im(320)], [im(490), im(330)]], cat: [104, 78], mug: null, lamp: [im(596), im(352)] },
-  { x: im(300), y: im(800), pose: "sitSide", face: -1, plate: [im(300), im(842)], occ: [302, 628, 80, 108], glow: [[im(145), im(470)]], cat: [42, 122], mug: [im(238), im(566)], lamp: [im(200), im(540)] },
-  { x: im(856), y: im(760), pose: "sitBack", plate: [im(856), im(884)], occ: [790, 702, 132, 108], glow: [[im(860), im(360)], [im(735), im(380)]], cat: [184, 126], mug: null },
-  { x: im(1156), y: im(760), pose: "sitBack", plate: [im(1156), im(884)], occ: [1090, 702, 132, 108], glow: [[im(1150), im(420)], [im(1080), im(350)]], cat: [246, 128], mug: null },
-  { x: im(825), y: im(1134), pose: "sitBack", plate: [im(825), im(1262)], occ: [755, 1076, 140, 120], glow: [[im(825), im(950)]], cat: [140, 198], mug: [im(940), im(1000)] },
-  { x: im(1185), y: im(1130), pose: "sitBack", plate: [im(1185), im(1262)], occ: [1115, 1072, 140, 124], glow: [[im(1175), im(960)]], cat: [262, 198], mug: [im(1245), im(1015)] },
-  { x: im(1715), y: im(800), pose: "sitSide", face: 1, plate: [im(1715), im(842)], occ: [1650, 624, 74, 122], glow: [[im(1850), im(620)]], cat: [354, 158], mug: null },
+  { x: im(440), y: im(641), pose: "sitBack", chair: { key: "chair_back", x: im(440), y: im(690), over: true }, plate: [im(440), im(712)], glow: [[im(360), im(330)], [im(490), im(335)]], cat: [im(520), im(420)], lamp: [im(595), im(345)] },
+  { x: im(318), y: im(812), pose: "sitSide", face: -1, chair: { key: "chair_side", x: im(330), y: im(835), face: -1 }, plate: [im(330), im(850)], glow: [[im(140), im(640)]], cat: [im(205), im(700)], mug: [im(250), im(575)], lamp: [im(195), im(545)] },
+  { x: im(802), y: im(800), pose: "sitSide", face: 1, chair: { key: "chair_side2", x: im(790), y: im(822), face: 1 }, plate: [im(790), im(842)], glow: [[im(985), im(560)]], cat: [im(905), im(640)] },
+  { x: im(1218), y: im(800), pose: "sitSide", face: -1, chair: { key: "chair_side", x: im(1230), y: im(822), face: -1 }, plate: [im(1230), im(842)], glow: [[im(1095), im(600)]], cat: [im(1110), im(705)] },
+  { x: im(830), y: im(1191), pose: "sitBack", chair: { key: "chair_back2", x: im(830), y: im(1250), over: true }, plate: [im(830), im(1262)], glow: [[im(825), im(1000)]], cat: [im(700), im(1000)], mug: [im(955), im(1015)] },
+  { x: im(1175), y: im(1191), pose: "sitBack", chair: { key: "chair_back3", x: im(1175), y: im(1250), over: true }, plate: [im(1175), im(1262)], glow: [[im(1175), im(1000)]], cat: [im(1300), im(1010)], mug: [im(1260), im(1030)] },
+  { x: im(1792), y: im(800), pose: "sitSide", face: -1, plate: [im(1790), im(945)], glow: [], cat: [im(1600), im(760)] },
 ];
-// Места, куда уходят: штурм у доски, кофейный угол, диван (спинкой к нам), сундук
-const SOFA_OCC = [1424, 1256, 545, 237];
+// Места, куда уходят: штурм у доски (стоя и на креслах-мешках), кофейный угол, диван, сундук, колесо
 const SPOTS = [
-  { id: "m1", kind: "meet", x: im(735), y: im(492), pose: "stand", back: true }, { id: "m2", kind: "meet", x: im(865), y: im(500), pose: "stand", back: true },
-  { id: "m3", kind: "meet", x: im(995), y: im(492), pose: "stand", back: true }, { id: "m4", kind: "meet", x: im(1125), y: im(500), pose: "stand", back: true },
-  { id: "k1", kind: "coffee", x: im(1460), y: im(505), pose: "stand", back: true }, { id: "k2", kind: "coffee", x: im(1580), y: im(512), pose: "standSide", face: -1 }, { id: "k3", kind: "coffee", x: im(1690), y: im(560), pose: "stand" },
-  { id: "so1", kind: "sofa", x: im(1570), y: im(1318), pose: "sitBack", occ: SOFA_OCC }, { id: "so2", kind: "sofa", x: im(1700), y: im(1318), pose: "sitBack", occ: SOFA_OCC }, { id: "so3", kind: "sofa", x: im(1830), y: im(1318), pose: "sitBack", occ: SOFA_OCC },
-  { id: "ch", kind: "bean", x: im(285), y: im(1238), pose: "sitFront" },
+  { id: "m1", kind: "meet", x: im(600), y: im(470), pose: "standBack" }, { id: "m2", kind: "meet", x: im(985), y: im(452), pose: "standBack" },
+  { id: "m3", kind: "meet", x: im(815), y: im(512), pose: "sitFront" }, { id: "m4", kind: "meet", x: im(1165), y: im(488), pose: "sitFront" },
+  { id: "k1", kind: "coffee", x: im(1470), y: im(578), pose: "standBack" }, { id: "k2", kind: "coffee", x: im(1585), y: im(584), pose: "standBack" }, { id: "k3", kind: "coffee", x: im(1700), y: im(612), pose: "stand" },
+  { id: "so1", kind: "sofa", x: im(1792), y: im(712), pose: "sitSide", face: -1 }, { id: "so2", kind: "sofa", x: im(1792), y: im(898), pose: "sitSide", face: -1 },
+  { id: "bb1", kind: "bean", x: im(815), y: im(512), pose: "sitFront" }, { id: "bb2", kind: "bean", x: im(1165), y: im(488), pose: "sitFront" },
+  { id: "ch", kind: "bean", x: im(1545), y: im(1352), pose: "sitFront" },
+  { id: "wh", kind: "wheel", x: im(1838), y: im(1452), pose: "run", face: 1 },
 ];
-const FALLBACK = { sofa: ["sofa", "bean"], bean: ["bean", "sofa"], stand: ["coffee", "bean"], cooler: ["coffee", "sofa"], bar: ["coffee", "sofa", "bean"], kitchen: ["coffee", "sofa", "bean"], meet: ["meet"] };
-const ACT = { sofa: "с ноутом на диване", bean: "с ноутом на сундуке", coffee: "в кофейном углу", stand: "работает стоя", bar: "в кофейном углу", cooler: "в кофейном углу", kitchen: "в кофейном углу" };
-const ROWS = { top: im(505), mid: im(905), bot: im(1300) }, LANES = [im(615), im(1405)], EXIT = [-14, im(905)];
-const zoneOf = y => y < 125 ? "top" : y > 205 ? "bot" : "mid";
-const isStand = pose => pose === "stand" || pose === "standSide";
+const FALLBACK = { sofa: ["sofa", "bean"], bean: ["bean", "sofa"], stand: ["coffee", "bean"], cooler: ["coffee", "sofa"], bar: ["coffee", "sofa", "bean"], kitchen: ["coffee", "sofa", "bean"], meet: ["meet"], wheel: ["wheel"] };
+const ACT = { sofa: "с ноутом на диване", bean: "с ноутом на кресле-мешке", coffee: "в кофейном углу", stand: "работает стоя", bar: "в кофейном углу", cooler: "в кофейном углу", kitchen: "в кофейном углу", wheel: "крутится как белка в колесе" };
+const ROWS = { top: im(560), mid: im(905), bot: im(1300) }, LANES = [im(620), im(1330)], EXIT = [-10, im(905)];
+const zoneOf = y => y < im(680) ? "top" : y > im(1000) ? "bot" : "mid";
+const isStand = pose => pose === "stand" || pose === "standBack" || pose === "standSide";
 
 const actors = people.map((p, i) => ({ p, i, seat: SEATS[i] || SEATS[SEATS.length - 1], x: 0, y: 0, mode: "hidden", pose: "sitBack", t: null, path: [], clicks: [], offendedUntil: 0, spinUntil: 0, shakeUntil: 0, bob: Math.random() * 6, face: 1 }));
-const cat = { x: 200, y: 168, tx: 200, ty: 168, next: 0, face: 1, sit: false };
+const cat = { x: 200, y: 175, tx: 200, ty: 175, next: 0, face: 1, sit: false, sleep: false };
+const dog = { x: im(1600), y: im(930), tx: im(1600), ty: im(930), next: 0, face: -1, state: "lie", until: 0 };
 const parts = [];
 const mugs = actors.map(() => ({ state: "ok", t: 0 }));
 let layout = { S: 2, ox: 0, oy: 0, cw: 0, ch: 0 };
@@ -684,6 +582,7 @@ function brainstorm(d) {
   bsCache.set(d, best); return best;
 }
 const pname = p => p.name.replace(/_/g, " ");
+const hasDesk = n => { const i = people.findIndex(p => p.name === n); return i >= 0 && i < 6; };
 function wantAt(n, d, h) {
   if (onVac(n, d)) return { k: "away", act: `в отпуске до ${dd(vacUntil(n, d))}` };
   const l = loadOf(n, d), r = k => rnd(n + "|" + d + "|" + k);
@@ -692,21 +591,22 @@ function wantAt(n, d, h) {
   if (h >= leave) return { k: "home", act: "уже не в офисе" };
   const bs = brainstorm(d);
   if (bs && bs.names.includes(n) && h >= bs.from && h < bs.to) return { k: "spot", kind: "meet", act: `штурм «${pname(bs.p)}» у доски` };
-  if (l <= 8 && h >= 13 && h < 14) return { k: "spot", kind: "kitchen", act: "обед", item: "cup" };
+  if (l <= 8 && h >= 13 && h < 14) return { k: "spot", kind: "kitchen", act: "обед", item: "coffee" };
   const cb = 10.75 + r("c") * 1.6;
-  if (l <= 9 && h >= cb && h < cb + .3) return { k: "spot", kind: "cooler", act: "кофе и болтовня", item: "cup" };
-  if (fatigue(n, d).f >= 80 && h >= 16.25 && h < 17) return { k: "spot", kind: "sofa", act: "выдохся, лежит на диване", item: "none", lie: true };
+  if (l <= 9 && h >= cb && h < cb + .3) return { k: "spot", kind: "cooler", act: "кофе и болтовня", item: "coffee" };
+  if (l > 8 && h >= 16 && h < 16.35) return { k: "spot", kind: "wheel", act: "перегруз: крутится как белка в колесе" };
+  if (fatigue(n, d).f >= 80 && h >= 16.5 && h < 17.2) return { k: "spot", kind: "sofa", act: "выдохся, лежит на диване", lie: true };
   if (l === 0) {
     const opts = ["sofa", "bean", "cooler", "desk", "desk"], o = opts[Math.floor(rnd(n + d + "f" + Math.floor(h)) * opts.length)];
-    if (o === "desk") return { k: "desk", act: "свободный день, сидит за столом" };
-    if (o === "sofa" && rnd(n + d + "lie") < .5) return { k: "spot", kind: "sofa", act: "свободный день: валяется на диване", item: "none", lie: true };
-    return { k: "spot", kind: o, act: "свободный день: " + ACT[o], item: o === "cooler" ? "cup" : "laptop" };
+    if (o === "desk" && hasDesk(n)) return { k: "desk", act: "свободный день, сидит за столом" };
+    if (o === "sofa" && rnd(n + d + "lie") < .5) return { k: "spot", kind: "sofa", act: "свободный день: валяется на диване", lie: true };
+    return { k: "spot", kind: o === "desk" ? "bean" : o, act: "свободный день: " + ACT[o === "desk" ? "bean" : o], item: o === "cooler" ? "coffee" : "laptop" };
   }
   if (l <= 6 && r("lap") < .6) {
     const s = 15.9 + r("ls") * .9;
-    if (h >= s && h < s + 1) { const o = ["sofa", "bean", "stand"][Math.floor(r("lk") * 3)]; return { k: "spot", kind: o, act: ACT[o], item: o === "stand" ? "cup" : "laptop" }; }
+    if (h >= s && h < s + 1) { const o = ["sofa", "bean"][Math.floor(r("lk") * 2)]; return { k: "spot", kind: o, act: ACT[o], item: "laptop" }; }
   }
-  return { k: "desk", act: l > 8 ? "завал, не встаёт из-за стола" : "за своим столом" };
+  return { k: "desk", act: l > 8 ? "завал, не встаёт из-за стола" : hasDesk(n) ? "за своим столом" : "с ноутом на диване" };
 }
 const destOf = (a, t) => t.k === "spot" ? t.spot : t.k === "home" ? { x: EXIT[0], y: EXIT[1], pose: "stand" } : a.seat;
 function route(x0, y0, x1, y1) {
@@ -717,17 +617,19 @@ function route(x0, y0, x1, y1) {
   pts.push([x1, ROWS[z1]], [x1, y1]);
   return pts;
 }
-function place(a, d) { a.x = d.x; a.y = d.y + (a.t?.lie ? 6 : 0); a.pose = a.t?.lie ? "lie" : d.pose; a.face = d.face || 1; a.backPose = !!d.back; a.mode = "placed"; }
+function place(a, d) { a.x = d.x; a.y = d.y; a.pose = a.t?.lie ? "lie" : d.pose; a.face = d.face || 1; a.mode = "placed"; }
 function updateTargets(instant) {
   const taken = new Set();
   for (const a of actors) {
     const w = wantAt(a.p.name, S.day, S.hour);
     let t = w;
+    if (w.k === "desk" && !hasDesk(a.p.name)) t = { ...w };
     if (w.k === "spot") {
       let sp = null;
-      for (const k of FALLBACK[w.kind] || [w.kind]) { sp = SPOTS.find(s => s.kind === k && !taken.has(s.id)); if (sp) break; }
-      const keep = sp && (sp.kind === w.kind || ["обед", "кофе и болтовня"].includes(w.act) || w.act.startsWith("штурм") || w.act.startsWith("выдохся"));
-      if (sp) { taken.add(sp.id); if (w.lie) { ["so1", "so2", "so3"].forEach(id => taken.add(id)); } t = { ...w, spot: sp, act: keep ? w.act : ACT[sp.kind], lie: w.lie && sp.kind === "sofa" }; }
+      const kinds = FALLBACK[w.kind] || [w.kind];
+      for (const k of kinds) { sp = SPOTS.find(s => s.kind === k && !taken.has(s.id) && !(k === "bean" && taken.has(s.id === "bb1" ? "m3" : s.id === "bb2" ? "m4" : "")) ); if (sp) break; }
+      const keep = sp && (sp.kind === w.kind || ["обед", "кофе и болтовня"].includes(w.act) || w.act.startsWith("штурм") || w.act.startsWith("выдохся") || w.act.startsWith("перегруз"));
+      if (sp) { taken.add(sp.id); if (sp.id === "m3") taken.add("bb1"); if (sp.id === "m4") taken.add("bb2"); if (sp.id === "bb1") taken.add("m3"); if (sp.id === "bb2") taken.add("m4"); if (w.lie) { taken.add("so1"); taken.add("so2"); } t = { ...w, spot: sp, act: keep ? w.act : ACT[sp.kind], lie: w.lie && sp.kind === "sofa" }; }
       else t = { k: "desk", act: "за своим столом" };
     }
     const key = t.k + (t.spot?.id || "") + (t.lie ? "L" : "");
@@ -760,14 +662,24 @@ function stepActors(dt) {
     }
   }
   const now = performance.now();
+  // кот: спит на столе у самого загруженного, иначе на столе отпускника, иначе гуляет
   const over = actors.filter(a => a.mode === "placed" && a.t?.k === "desk" && stateOf(a.p.name, S.day) === "over").sort((x, y) => loadOf(y.p.name, S.day) - loadOf(x.p.name, S.day))[0];
   const owner = actors.find(a => has(a.p, "catOwner"));
   let spot = null;
   if (over) spot = over.seat.cat; else if (owner && owner.mode === "away") spot = owner.seat.cat;
   if (spot) { cat.tx = spot[0]; cat.ty = spot[1]; }
-  else if (now > cat.next) { cat.tx = 130 + Math.random() * 140; cat.ty = 162 + Math.random() * 18; cat.next = now + 4000 + Math.random() * 5000; }
+  else if (now > cat.next) { cat.tx = im(700) + Math.random() * im(560); cat.ty = im(880) + Math.random() * im(60); cat.next = now + 4000 + Math.random() * 5000; }
   const cdx = cat.tx - cat.x, cdy = cat.ty - cat.y, cd = Math.hypot(cdx, cdy), cs = 30 * dt;
   if (cd > cs) { cat.x += cdx / cd * cs; cat.y += cdy / cd * cs; cat.face = cdx < 0 ? -1 : 1; cat.sit = false; } else cat.sit = true;
+  cat.sleep = cat.sit && !!spot;
+  // самоед: лежит у дивана, иногда встаёт и идёт к кому-нибудь, вечером спит
+  if (now > dog.until) {
+    const r = Math.random(), dark = darkness(S.hour) > .5;
+    if (dark || r < .45) { dog.state = dark ? "sleep" : "lie"; dog.tx = im(1600); dog.ty = im(930); dog.until = now + 9000 + Math.random() * 8000; }
+    else { const a = actors.filter(x => x.mode === "placed")[Math.floor(Math.random() * 6)]; dog.tx = a ? a.x + 10 : im(1000); dog.ty = a ? Math.max(a.y + 6, ROWS.mid) : ROWS.mid; dog.state = "walk"; dog.until = now + 14000; }
+  }
+  const ddx = dog.tx - dog.x, ddy = dog.ty - dog.y, dd2 = Math.hypot(ddx, ddy), ds = 34 * dt;
+  if (dd2 > ds) { dog.x += ddx / dd2 * ds; dog.y += ddy / dd2 * ds; dog.face = ddx < 0 ? -1 : 1; dog.moving = true; } else dog.moving = false;
   for (let i = parts.length - 1; i >= 0; i--) {
     const q = parts[i]; q.life -= dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vy += (q.grav || 0) * dt;
     if (q.floor && q.y > q.floor) { q.y = q.floor; q.vy *= -.35; q.vx *= .6; }
@@ -776,7 +688,7 @@ function stepActors(dt) {
 }
 
 /* ---------- рисование ---------- */
-function circ(cx, cy, r, col) { for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) if (x * x + y * y <= r * r) R(cx + x, cy + y, 1, 1, col); }
+function circ(cx, cy, r, col) { G.fillStyle = col; G.beginPath(); G.arc(cx, cy, r, 0, Math.PI * 2); G.fill(); }
 function skyColor(h) {
   const K = [[8, [27, 30, 68]], [9, [246, 180, 143]], [10.5, [142, 201, 240]], [16, [142, 201, 240]], [17.5, [240, 160, 112]], [18.5, [200, 112, 138]], [19.5, [58, 63, 122]], [21, [27, 30, 68]]];
   for (let i = 0; i < K.length - 1; i++) {
@@ -789,140 +701,123 @@ const rgb = a => `rgb(${a.join(",")})`;
 const darkness = h => h < 9 ? 1 : h < 10 ? 1 - (h - 9) : h < 17.5 ? 0 : h < 19.5 ? (h - 17.5) / 2 : 1;
 const atSeat = a => a && a.mode === "placed" && a.t?.k === "desk";
 const working = i => atSeat(actors[i]) && loadOf(actors[i].p.name, S.day) > 0;
-const seatedHere = a => a.mode === "placed" && !isStand(a.pose);
 
-// какой спрайт сейчас у человека
+// какой кадр сейчас у человека
 function look(a, t) {
-  if (a.mode === "walking") {
-    const phase = 1 + Math.floor(t / 150) % 2;
-    if (a.dir === "side") return { img: sprite(a.p, { pose: phase === 1 ? "walkSide" : "standSide", phase }), face: a.face };
-    return { img: sprite(a.p, { pose: "walk", phase, back: a.dir === "up" }), face: 1 };
-  }
   const turned = a.offendedUntil > t || (a.spinUntil > t && Math.floor(t / 180) % 2);
-  const atDesk = a.t?.k === "desk", l = loadOf(a.p.name, S.day);
-  if (a.pose === "sitBack") return { img: sprite(a.p, { pose: "sitBack", phase: atDesk && l > 0 ? Math.floor(t / 160) % 2 : 0 }), face: 1 };
-  if (a.pose === "sitSide") return turned ? { img: sprite(a.p, { pose: "sitBack" }), face: 1 } : { img: sprite(a.p, { pose: "sitSide" }), face: a.face };
-  if (a.pose === "sitFront") return { img: sprite(a.p, { pose: "sitFront", back: !!turned }), face: 1 };
-  if (a.pose === "lie") return { img: sprite(a.p, { pose: "lie" }), face: 1 };
-  if (a.pose === "standSide") return turned ? { img: sprite(a.p, { pose: "stand", back: true }), face: 1 } : { img: sprite(a.p, { pose: "standSide" }), face: a.face };
-  return { img: sprite(a.p, { pose: "stand", back: a.backPose || !!turned }), face: 1 };
+  if (a.mode === "walking") {
+    const step = Math.floor(t / 170) % 2;
+    if (a.dir === "side") return { key: fkey(a.p, step ? "walkSide" : "side"), face: a.face };
+    if (a.dir === "up") return { key: fkey(a.p, step ? "walkBack" : "back"), face: 1 };
+    return { key: fkey(a.p, step ? "walk" : "stand"), face: 1 };
+  }
+  if (a.pose === "run") return { key: fkey(a.p, Math.floor(t / 110) % 2 ? "walkSide" : "side"), face: 1 };
+  if (a.pose === "lie") return { key: fkey(a.p, "lie"), face: 1, rot: -Math.PI / 2 };
+  if (turned && a.pose !== "sitBack" && a.pose !== "standBack") return { key: fkey(a.p, a.pose.startsWith("sit") ? "sitBack" : "back"), face: 1 };
+  const map = { sitBack: "sitBack", sitSide: "sitSide", sitFront: "sitFront", stand: "stand", standBack: "back", standSide: "side" };
+  return { key: fkey(a.p, map[a.pose] || "stand"), face: a.face || 1 };
 }
-const sizeOf = a => { const L = look(a, performance.now()); return [L.img.width * CELL, L.img.height * CELL]; };
-function drawActor(a, t) {
+const sizeOf = a => { const L = look(a, performance.now()); const [w, h] = dims(L.key); return L.rot ? [h, w] : [w, h]; };
+function drawActor(c2, a, t) {
   if (a.mode === "hidden" || a.mode === "away") return;
-  const L = look(a, t), w = L.img.width, h = L.img.height;
-  let gx = Math.round(a.x * GK - w / 2), gy = Math.round(a.y * GK - h);
-  if (a.shakeUntil > t) gx += Math.round(Math.sin(t / 25));
+  const L = look(a, t); if (!L.key) return;
+  let x = a.x, y = a.y;
+  if (a.shakeUntil > t) x += Math.sin(t / 25) * 1.2;
   const atDesk = a.t?.k === "desk", st = stateOf(a.p.name, S.day), l = loadOf(a.p.name, S.day);
-  if (atDesk && l > 0 && a.pose !== "lie") gy += Math.floor((t / (st === "over" ? 120 : st === "flow" ? 180 : 320) + a.bob) % 2) ? 0 : 0;
-  if (atDesk && l === 0) gx += Math.round(Math.sin(t / 900 + a.bob) * .6);
-  if (L.face < 0) { og.save(); og.translate(gx + w, gy); og.scale(-1, 1); og.drawImage(L.img, 0, 0); og.restore(); }
-  else og.drawImage(L.img, gx, gy);
-  // в руках: кружка, ноутбук
-  const item = a.t?.item ?? (a.t?.spot ? (a.t.spot.kind === "coffee" ? "cup" : a.t.spot.kind === "meet" ? null : "laptop") : null);
-  if (a.mode === "placed" && item === "cup" && (a.pose === "stand" && !a.backPose)) { og.fillStyle = "#FFFFFF"; og.fillRect(gx + 16, gy + 19, 2, 3); og.fillStyle = "#7A5233"; og.fillRect(gx + 16, gy + 19, 2, 1); }
-  if (a.mode === "placed" && item === "laptop" && a.pose === "sitFront") { og.fillStyle = "#B9B4CC"; og.fillRect(gx + 5, gy + 18, 10, 3); og.fillStyle = "#7FE3FF"; og.fillRect(gx + 6, gy + 18, 8, 1); }
-  if (a.mode === "placed" && atDesk && st === "over" && Math.random() < .08 && !REDUCED) parts.push({ x: a.x + (Math.random() - .5) * 6, y: a.y - h * CELL, vx: (Math.random() - .5) * 6, vy: -12, life: 1.6, c: "rgba(220,220,235,.85)", s: 2 });
+  if (atDesk && l > 0) y -= (Math.floor((t / (st === "over" ? 130 : st === "flow" ? 190 : 330) + a.bob) % 2)) * .35;
+  if (atDesk && l === 0) x += Math.sin(t / 900 + a.bob) * .4;
+  if (a.mode === "walking") y -= Math.abs(Math.sin(t / 170 * Math.PI)) * .6;
+  if (L.rot) { const [w, h] = dims(L.key); blit(c2, L.key, x, y - w / 2, 1, L.rot); }
+  else blit(c2, L.key, x, y, L.face);
+  // в руках: стакан кофе, ноутбук на коленях
+  const item = a.t?.item ?? (a.t?.spot ? (a.t.spot.kind === "coffee" ? "coffee" : ["meet", "wheel"].includes(a.t.spot.kind) ? null : "laptop") : null);
+  if (a.mode === "placed" && item === "coffee" && a.pose === "stand") blit(c2, "coffee", x + 5, y - 13);
+  if (a.mode === "placed" && item === "laptop" && a.pose === "sitFront") blit(c2, "laptop", x, y - 4);
+  if (a.mode === "placed" && item === "laptop" && a.pose === "sitSide" && !atDesk) blit(c2, "laptop", x + 4 * (a.face || 1), y - 7, a.face);
+  if (a.mode === "placed" && atDesk && st === "over" && Math.random() < .05 && !REDUCED) parts.push({ x: a.x + (Math.random() - .5) * 6, y: a.y - dims(L.key)[1], vx: (Math.random() - .5) * 5, vy: -9, life: 1.6, c: "#D8DAEA", puff: true });
 }
 function feet(a) { if (a.mode === "hidden" || a.mode === "away") return [a.seat.x, a.seat.y]; return [a.x, a.y]; }
-function drawCat(t) {
-  const x = Math.round(cat.x * GK), y = Math.round(cat.y * GK) - 6, f = cat.face, leg = cat.sit ? 0 : Math.floor(t / 150) % 2;
-  const P = (dx, dy, w, h, c) => { og.fillStyle = c; og.fillRect(f > 0 ? x + dx : x + 8 - dx - w, y + dy, w, h); };
-  P(0, 2, 7, 3, "#141414"); P(5, 0, 3, 3, "#141414"); P(5, -1, 1, 1, "#141414"); P(7, -1, 1, 1, "#141414");
-  P(6, 1, 1, 1, "#E8C840"); P(7, 1, 1, 1, "#E8C840"); P(-1, Math.floor(t / 500) % 2, 1, 3, "#141414");
-  if (!cat.sit) { P(1 + leg, 5, 1, 1, "#141414"); P(5 - leg, 5, 1, 1, "#141414"); }
-}
-// мелочи на столах: открытка из отпуска, пицца в пятницу, улетевшие бумаги при перегрузе
+// мелочи на столах: открытка из отпуска, пицца в пятницу, улетевшие бумаги при перегрузе, лужи от кружек
 function deskBits(t) {
   G = ctx;
   actors.forEach((a, i) => {
-    const [x, y] = SEATS[i].cat;
-    if (a.mode === "away") { R(x, y, 11, 7, "#9EE0FF"); R(x, y + 5, 11, 2, "#F4D35E"); circ(x + 8, y + 2, 1, "#FFD36A"); R(x + 3, y + 1, 1, 5, "#7A5233"); R(x + 1, y + 1, 4, 1, "#3DBE5A"); }
-    else if (atSeat(a) && S.day % 5 === 4 && S.hour >= 17.5) { R(x, y, 11, 6, "#E9C46A"); R(x + 1, y + 1, 9, 4, "#E76F51"); R(x + 3, y + 2, 1, 1, "#FFE38A"); }
-    if (a.mode !== "away" && stateOf(a.p.name, S.day) === "over") { const [px, py] = a.seat.plate; R(px - 14, py - 4, 6, 2, "#FFFFFF"); R(px + 10, py - 2, 5, 2, "#E8E2D6"); }
-    const m = mugs[i]; if (m.state === "puddle" && SEATS[i].mug) { const [mx, my] = SEATS[i].mug, k = clamp((t - m.t) / 1000, 0, 1); R(mx - 3, my + 8, 11 - k * 2, 3, `rgba(122,82,51,${.9 - k * .3})`); }
+    const s = SEATS[i]; if (!s) return;
+    const [x, y] = s.cat;
+    if (a.mode === "away") { R(x - 5, y - 4, 11, 7, "#9EE0FF"); R(x - 5, y + 1, 11, 2, "#F4D35E"); circ(x + 3, y - 2, 1.2, "#FFD36A"); R(x - 2, y - 3, .8, 5, "#7A5233"); R(x - 4, y - 3, 4, .8, "#3DBE5A"); }
+    else if (atSeat(a) && S.day % 5 === 4 && S.hour >= 17.5) { R(x - 5, y - 4, 11, 6, "#E9C46A"); R(x - 4, y - 3, 9, 4, "#E76F51"); }
+    if (a.mode !== "away" && stateOf(a.p.name, S.day) === "over" && s.plate) { const [px, py] = s.plate; blit(ctx, "papers", px - 15, py + 1); }
+    const m = mugs[i]; if (m.state === "puddle" && s.mug) { const [mx, my] = s.mug, k = clamp((t - m.t) / 1000, 0, 1); R(mx - 3, my + 6, 11 - k * 2, 3, `rgba(122,82,51,${.9 - k * .3})`); }
   });
 }
-// обводка по силуэтам спрайтов
-function outline() {
-  const img = og.getImageData(0, 0, GW, GH), d = img.data, out = new Uint8ClampedArray(d);
-  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
-    const i = (y * GW + x) * 4; if (d[i + 3] > 0) continue;
-    if ((x > 0 && d[i - 1] > 0) || (x < GW - 1 && d[i + 7] > 0) || (y > 0 && d[i - GW * 4 + 3] > 0) || (y < GH - 1 && d[i + GW * 4 + 3] > 0)) {
-      out[i] = OUTLINE[0]; out[i + 1] = OUTLINE[1]; out[i + 2] = OUTLINE[2]; out[i + 3] = 255;
-    }
-  }
-  img.data.set(out); og.putImageData(img, 0, 0);
-}
 let tint = 0;
-function spriteLayer(list) {
-  og.clearRect(0, 0, GW, GH);
-  list.sort((p, q) => p.z - q.z).forEach(o => o.d());
-  outline();
-  if (tint > 0) { og.globalCompositeOperation = "source-atop"; og.fillStyle = `rgba(14,16,56,${tint})`; og.fillRect(0, 0, GW, GH); og.globalCompositeOperation = "source-over"; }
-  ctx2.imageSmoothingEnabled = false; ctx2.drawImage(objC, 0, 0, GW * CELL, GH * CELL);
-}
-function bgPart([sx, sy, sw, sh], amb) {
-  const k = BG.naturalWidth / IMG_W; ctx2.imageSmoothingEnabled = true;
-  ctx2.drawImage(BG, sx * k, sy * k, sw * k, sh * k, im(sx), im(sy), im(sw), im(sh));
-  if (amb) { ctx2.globalCompositeOperation = "multiply"; ctx2.fillStyle = amb; ctx2.fillRect(im(sx), im(sy), im(sw), im(sh)); ctx2.globalCompositeOperation = "source-over"; }
-}
 function glow(c2, x, y, r, c, a) { const gr = c2.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, c); gr.addColorStop(1, "rgba(0,0,0,0)"); c2.globalAlpha = a; c2.fillStyle = gr; c2.fillRect(x - r, y - r, r * 2, r * 2); c2.globalAlpha = 1; }
 
 function render(t) {
   const dpr = window.devicePixelRatio || 1, { S: sc, ox, oy, cw, ch } = layout;
-  for (const c of [cv, cv2]) if (c.width !== Math.round(cw * dpr) || c.height !== Math.round(ch * dpr)) { c.width = Math.round(cw * dpr); c.height = Math.round(ch * dpr); }
+  for (const c of [cv, cv2, sprC]) if (c.width !== Math.round(cw * dpr) || c.height !== Math.round(ch * dpr)) { c.width = Math.round(cw * dpr); c.height = Math.round(ch * dpr); }
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#15173A"; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx2.setTransform(1, 0, 0, 1, 0, 0); ctx2.clearRect(0, 0, cv2.width, cv2.height);
-  ctx.setTransform(sc * dpr, 0, 0, sc * dpr, ox * dpr, oy * dpr);
-  ctx2.setTransform(sc * dpr, 0, 0, sc * dpr, ox * dpr, oy * dpr);
+  sx2.setTransform(1, 0, 0, 1, 0, 0); sx2.clearRect(0, 0, sprC.width, sprC.height);
+  for (const c2 of [ctx, ctx2, sx2]) { c2.setTransform(sc * dpr, 0, 0, sc * dpr, ox * dpr, oy * dpr); c2.imageSmoothingEnabled = true; c2.imageSmoothingQuality = "high"; }
   if (!bgReady) return;
   const h = S.hour, dk = darkness(h), sky = skyColor(h);
   const ambA = !S.lights ? [70, 72, 128] : [Math.round(255 - dk * 120), Math.round(255 - dk * 112), Math.round(255 - dk * 60)];
   const amb = (!S.lights || dk > 0) ? rgb(ambA) : null;
-  tint = !S.lights ? .5 : dk * .42;
+  tint = !S.lights ? .45 : dk * .38;
   // нижний холст: фон, небо в окнах, мелочи на столах, свет, телевизор, часы
-  ctx.imageSmoothingEnabled = true; ctx.drawImage(BG, 0, 0, W, H);
-  ctx.globalCompositeOperation = "color"; ctx.globalAlpha = .55; ctx.fillStyle = rgb(sky);
-  ctx.fillRect(im(132), im(30), im(76), im(270)); ctx.fillRect(im(1795), im(40), im(80), im(270));
+  ctx.drawImage(BG, 0, 0, W, H);
+  ctx.globalCompositeOperation = "color"; ctx.globalAlpha = .5; ctx.fillStyle = rgb(sky);
+  ctx.fillRect(im(128), im(90), im(86), im(390)); ctx.fillRect(im(1800), im(90), im(82), im(400));
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
   deskBits(t);
   if (amb) { ctx.globalCompositeOperation = "multiply"; ctx.fillStyle = amb; ctx.fillRect(0, 0, W, H); }
   ctx.globalCompositeOperation = "lighter";
-  actors.forEach((a, i) => { if (working(i)) SEATS[i].glow.forEach(([x, y]) => glow(ctx, x, y, 16, "#6FD0FF", .28 + dk * .2)); });
-  if (dk > .2 || !S.lights) SEATS.forEach(s => { if (s.lamp) glow(ctx, ...s.lamp, 26, "#FFB45E", .35); });
-  if (S.music) glow(ctx, im(1905), im(845), 14, "#B06BFF", .5);
+  actors.forEach((a, i) => { if (working(i)) (SEATS[i].glow || []).forEach(([x, y]) => glow(ctx, x, y, 18, "#6FD0FF", .26 + dk * .2)); });
+  if (dk > .2 || !S.lights) SEATS.forEach(s => { if (s.lamp) glow(ctx, ...s.lamp, 28, "#FFB45E", .35); });
+  if (S.music) glow(ctx, im(1872), im(838), 14, "#B06BFF", .5);
   ctx.globalCompositeOperation = "source-over";
-  const cx = im(1693), cy = im(90), hh = (h % 12) / 12 * Math.PI * 2, mm = (h % 1) * Math.PI * 2;
-  ctx.fillStyle = "#FBF8F0"; ctx.beginPath(); ctx.arc(cx, cy, 6.6, 0, Math.PI * 2); ctx.fill();
+  const cx = im(1694), cy = im(85), hh = (h % 12) / 12 * Math.PI * 2, mm = (h % 1) * Math.PI * 2;
+  ctx.fillStyle = "#FBF8F0"; ctx.beginPath(); ctx.arc(cx, cy, 7.4, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = "#2A2340"; ctx.lineCap = "round";
-  ctx.lineWidth = .9; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.sin(hh) * 3.6, cy - Math.cos(hh) * 3.6); ctx.stroke();
-  ctx.lineWidth = .6; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.sin(mm) * 5.4, cy - Math.cos(mm) * 5.4); ctx.stroke();
-  ctx.save(); ctx.beginPath(); ctx.rect(im(285), im(62), im(222), im(135)); ctx.clip();
-  ctx.fillStyle = "#16304F"; ctx.fillRect(im(285), im(62), im(222), im(135));
+  ctx.lineWidth = .9; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.sin(hh) * 4, cy - Math.cos(hh) * 4); ctx.stroke();
+  ctx.lineWidth = .6; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.sin(mm) * 6, cy - Math.cos(mm) * 6); ctx.stroke();
+  ctx.save(); ctx.beginPath(); ctx.rect(im(283), im(62), im(222), im(130)); ctx.clip();
+  ctx.fillStyle = "#16304F"; ctx.fillRect(im(283), im(62), im(222), im(130));
   const today = work.filter(p => dlText(p).diff === 0).map(pname), tomorrow = work.filter(p => dlText(p).diff === 1).map(pname);
   const ticker = (today.length ? "СДАЧА СЕГОДНЯ: " + today.join(" · ") : "СЕГОДНЯ СДАЧ НЕТ") + (tomorrow.length ? "   ЗАВТРА: " + tomorrow.join(" · ") : "") + "   ";
   ctx.textAlign = "left"; ctx.textBaseline = "top";
   ctx.font = `700 7px "Golos Text", sans-serif`; ctx.fillStyle = "#FFE38A";
   const tw = ctx.measureText(ticker).width, off2 = (t / 45) % (tw + 44);
-  ctx.fillText(ticker, im(507) - off2, im(110)); ctx.fillText(ticker, im(507) - off2 + tw + 44, im(110));
-  ctx.fillStyle = "#7FE3FF"; ctx.font = `700 4px "Golos Text", sans-serif`; ctx.fillText("DPG TV", im(300), im(72));
+  ctx.fillText(ticker, im(505) - off2, im(110)); ctx.fillText(ticker, im(505) - off2 + tw + 44, im(110));
+  ctx.fillStyle = "#7FE3FF"; ctx.font = `700 4px "Golos Text", sans-serif`; ctx.fillText("DPG TV", im(298), im(72));
   ctx.restore();
-  ctx.fillStyle = "#2B2B3B"; ctx.fillRect(im(1880), im(820), 9, 8);
-  ctx.fillStyle = S.music ? `hsl(${270 + Math.sin(t / 300) * 15} 90% 65%)` : "#5A5A7A"; ctx.fillRect(im(1880), im(820), 9, 1.4);
-  // верхний холст (над доской): сидящие, спинки стульев, стоящие и идущие, кот, частицы
-  const seated = [], free = [];
-  for (const a of actors) {
-    if (a.mode === "hidden" || a.mode === "away") continue;
-    (seatedHere(a) ? seated : free).push({ z: a.y, d: () => drawActor(a, t) });
-  }
-  free.push({ z: cat.y, d: () => drawCat(t) });
-  spriteLayer(seated);
-  const done = new Set();
-  for (const a of actors) if (seatedHere(a)) { const occ = a.t?.k === "desk" ? a.seat.occ : a.t?.spot?.occ; if (occ && !done.has(occ)) { done.add(occ); bgPart(occ, amb); } }
-  spriteLayer(free);
+  ctx.fillStyle = "#2B2B3B"; ctx.fillRect(im(1855), im(820), 9, 8);
+  ctx.fillStyle = S.music ? `hsl(${270 + Math.sin(t / 300) * 15} 90% 65%)` : "#5A5A7A"; ctx.fillRect(im(1855), im(820), 9, 1.4);
+  // верхний холст (над доской): стулья, люди, кот, самоед, колесо — по глубине (чем ниже точка, тем ближе к нам)
+  const L = [];
+  actors.forEach((a, i) => {
+    const s = SEATS[i];
+    if (s?.chair) {
+      const ch = s.chair, here = atSeat(a);
+      // пустой стул чуть отодвинут: спинкой к нам — на себя, боком — от стола
+      const dx = here || ch.over ? 0 : -(ch.face || 1) * 3, dy = here || !ch.over ? 0 : 3;
+      L.push({ z: ch.over ? ch.y + dy : s.y - .5, d: () => blit(sx2, ch.key, ch.x + dx, ch.y + dy, ch.face || 1) });
+    }
+    if (a.mode !== "hidden" && a.mode !== "away") L.push({ z: a.y, d: () => drawActor(sx2, a, t) });
+  });
+  const runner = actors.find(a => a.mode === "placed" && a.pose === "run");
+  L.push({ z: im(1460), d: () => { if (WHEEL.complete && WHEEL.naturalWidth) { const k = 1 / 5; sx2.drawImage(WHEEL, im(1660), im(1080), WHEEL.naturalWidth * k, WHEEL.naturalHeight * k); } } });
+  if (runner) L.find(o => o.z === im(1460)).z = runner.y + .5;
+  L.push({ z: cat.y, d: () => blit(sx2, cat.sleep ? "cat_curl" : cat.sit ? "cat_sit" : "cat_walk", cat.x, cat.y, cat.sit ? 1 : cat.face) });
+  L.push({ z: dog.y, d: () => blit(sx2, dog.moving ? "dog_walk" : dog.state === "sleep" ? "dog_sleep" : dog.state === "bow" ? "dog_bow" : dog.state === "sit" ? "dog_sit" : "dog_lie2", dog.x, dog.y, dog.face) });
+  L.sort((p, q) => p.z - q.z).forEach(o => o.d());
+  if (tint > 0) { sx2.save(); sx2.setTransform(1, 0, 0, 1, 0, 0); sx2.globalCompositeOperation = "source-atop"; sx2.fillStyle = `rgba(14,16,56,${tint})`; sx2.fillRect(0, 0, sprC.width, sprC.height); sx2.restore(); }
+  ctx2.save(); ctx2.setTransform(1, 0, 0, 1, 0, 0); ctx2.drawImage(sprC, 0, 0); ctx2.restore();
   G = ctx2;
-  for (const q of parts) R(q.x, q.y, q.s || 1, q.s || 1, q.c);
+  for (const q of parts) {
+    if (q.puff) { const k = clamp(q.life / 1.6, 0, 1); ctx2.globalAlpha = .55 * k; circ(q.x, q.y, 1.2 + (1 - k) * 3, q.c); ctx2.globalAlpha = 1; }
+    else R(q.x, q.y, q.s || 1, q.s || 1, q.c);
+  }
   if (dragging?.kind === "project" || pickMode) {
     for (const a of actors) {
       if (a.mode === "hidden") continue;
@@ -930,7 +825,7 @@ function render(t) {
       ctx2.strokeStyle = c; ctx2.lineWidth = hv ? 2 : 1.2; ctx2.beginPath(); ctx2.ellipse(fx, fy, 14, 4, 0, 0, Math.PI * 2); ctx2.stroke();
     }
   }
-  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx2.setTransform(1, 0, 0, 1, 0, 0);
+  for (const c2 of [ctx, ctx2, sx2]) c2.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 /* ================= раскладка, DOM поверх ================= */
@@ -958,8 +853,8 @@ const toScene = (cx, cy) => { const r = scene.getBoundingClientRect(); return [(
 /* ---------- доска на стене и большая доска ---------- */
 const board = document.createElement("div"); board.className = "board"; layer.appendChild(board);
 function placeBoard() {
-  const [x, y] = toScreen(133, 11);
-  Object.assign(board.style, { left: x + "px", top: y + "px", width: 136 * layout.S + "px", height: 58 * layout.S + "px" });
+  const [x, y] = toScreen(134, 6.6);
+  Object.assign(board.style, { left: x + "px", top: y + "px", width: 138 * layout.S + "px", height: 62.6 * layout.S + "px" });
 }
 function dlText(p) {
   if (!p.dl) return { t: "без срока", cls: "", diff: 99 };
@@ -1045,7 +940,7 @@ function placePlates() {
   actors.forEach((a, i) => { const [x, y] = toScreen(...a.seat.plate); Object.assign(plates[i].style, { left: x + "px", top: y + "px" }); plates[i].classList.toggle("dim", !(a.mode === "placed" && a.t?.k === "desk")); });
   const bs = brainstorm(S.day), at = actors.filter(a => a.mode === "placed" && a.t?.spot?.kind === "meet").length;
   mlabel.hidden = !(bs && at >= 2);
-  if (!mlabel.hidden) { mlabel.textContent = "🧠 штурм у доски: " + pname(bs.p); const [x, y] = toScreen(186, 50); Object.assign(mlabel.style, { left: x + "px", top: y + "px" }); }
+  if (!mlabel.hidden) { mlabel.textContent = "🧠 штурм у доски: " + pname(bs.p); const [x, y] = toScreen(158, 74); Object.assign(mlabel.style, { left: x + "px", top: y + "px" }); }
 }
 function renderPlates() {
   actors.forEach((a, i) => {
@@ -1075,28 +970,32 @@ let printerUntil = 0;
 const ALICE = ["Включаю музыку для дедлайна", "Ищу: как объяснить, что синий — это синий", "Ставлю таймер «ещё пять минут»", "Напоминаю: ОС клиента ждём с 1998", "Не нашла final_final_v4. Может, final_final_v3_правки?", "Слушаю. Только не про «сделайте вау»"];
 let aliceClick = 0;
 const OBJECTS = [
-  { x: 117, y: 48, w: 8, h: 11, tip: () => S.lights ? "Выключить свет" : "Включить свет", go() { S.lights = !S.lights; snd.blip(S.lights ? 880 : 330); } },
-  { x: 24, y: 4, w: 20, h: 58, tip: () => S.windowOpen ? "Закрыть окно" : "Открыть окно", go() { S.windowOpen = !S.windowOpen; snd.street(S.windowOpen); snd.whoosh(); } },
-  { x: 356, y: 6, w: 20, h: 60, tip: () => S.windowOpen ? "Закрыть окно" : "Открыть окно", go() { S.windowOpen = !S.windowOpen; snd.street(S.windowOpen); snd.whoosh(); } },
-  { x: 55, y: 10, w: 50, h: 32, tip: () => "DPG TV: сдачи сегодня и завтра", go() { const td = work.filter(p => dlText(p).diff === 0).map(pname); sayAt(80, 42, td.length ? "Сегодня сдаём: " + td.join(", ") : "Сегодня сдач нет", 2600); snd.blip(700); } },
-  { x: 107, y: 11, w: 18, h: 31, tip: () => "Постер с яблоком. Почти «Красное яблоко»", go() { sayAt(116, 40, "🍎 когда-нибудь и настоящее", 1600); snd.blip(900); } },
-  { x: 373, y: 160, w: 14, h: 12, tip: () => S.music ? "Станция: выключить лофай (двойной тык — Алиса)" : "Станция: включить лофай (двойной тык — Алиса)", go() {
+  { x: 118, y: 48, w: 7, h: 10, tip: () => S.lights ? "Выключить свет" : "Включить свет", go() { S.lights = !S.lights; snd.blip(S.lights ? 880 : 330); } },
+  { x: 24, y: 18, w: 20, h: 80, tip: () => S.windowOpen ? "Закрыть окно" : "Открыть окно", go() { S.windowOpen = !S.windowOpen; snd.street(S.windowOpen); snd.whoosh(); } },
+  { x: 358, y: 18, w: 20, h: 80, tip: () => S.windowOpen ? "Закрыть окно" : "Открыть окно", go() { S.windowOpen = !S.windowOpen; snd.street(S.windowOpen); snd.whoosh(); } },
+  { x: 55, y: 11, w: 47, h: 29, tip: () => "DPG TV: сдачи сегодня и завтра", go() { const td = work.filter(p => dlText(p).diff === 0).map(pname); sayAt(79, 40, td.length ? "Сегодня сдаём: " + td.join(", ") : "Сегодня сдач нет", 2600); snd.blip(700); } },
+  { x: 108, y: 11, w: 17, h: 30, tip: () => "Постер с яблоком. Почти «Красное яблоко»", go() { sayAt(116, 40, "🍎 когда-нибудь и настоящее", 1600); snd.blip(900); } },
+  { x: 41, y: 30, w: 19, h: 70, tip: () => "Доска для сёрфа", go() { sayAt(50, 30, "🏄 после сдачи — на Маврикий", 1800); snd.whoosh(); } },
+  { x: 368, y: 160, w: 12, h: 12, tip: () => S.music ? "Станция: выключить лофай (двойной тык — Алиса)" : "Станция: включить лофай (двойной тык — Алиса)", go() {
     const now = performance.now();
-    if (now - aliceClick < 350) { sayAt(380, 160, "Алиса: " + ALICE[Math.floor(Math.random() * ALICE.length)], 3200); aliceClick = 0; return; }
+    if (now - aliceClick < 350) { sayAt(374, 160, "Алиса: " + ALICE[Math.floor(Math.random() * ALICE.length)], 3200); aliceClick = 0; return; }
     aliceClick = now;
     setTimeout(() => { if (aliceClick !== now) return; if (!S.sound) setSound(true); S.music = snd.music(!S.music); }, 360);
   } },
-  { x: 302, y: 22, w: 44, h: 18, tip: () => `Выиграли: ${won.length}. Тык — праздник`, go() { confetti(324, 32); snd.tada(); sayAt(324, 24, `Кубков: ${won.length} · последний — ${won[0] ? pname(won[0]) : "—"}`, 2600); } },
-  { x: 189, y: 245, w: 20, h: 26, tip: () => `Яма неизвестности: ${lost.length}. Тык — бросок бумажкой`, go: throwBall },
-  { x: 254, y: 79, w: 13, h: 15, tip: () => `Ещё одна яма неизвестности. Тык — бросок`, go: throwBall },
-  { x: 18, y: 176, w: 34, h: 22, tip: () => DATA.inbox.length ? `Лоток: новых брифов без команды — ${DATA.inbox.length}` : "Принтер и лоток входящих: новых брифов без команды нет", go() { printerUntil = performance.now() + 900; sayAt(35, 176, "бжжж… бумага кончилась", 1400); snd.printer(); } },
-  { x: 256, y: 248, w: 24, h: 50, tip: () => S.plant <= 0 ? "Растение просит воды" : "Полить растение", go() { for (let k = 0; k < 10; k++) parts.push({ x: 262 + Math.random() * 12, y: 246, vx: 0, vy: 20 + Math.random() * 20, life: .7, c: "#7FC4EA", s: 1 }); S.plant = Math.min(6, S.plant + 1); store.set("plant", S.plant); snd.drop(); } },
-  { x: 34, y: 236, w: 46, h: 34, tip: () => "Сундук идей. Тык — достать идею", go() { const I = ["AR-примерочная на кассе", "квест по стикерам на коробке", "живая очередь как шоу", "мерч, который хочется украсть", "промо через Алису", "фотозона, где фотографирует посетитель"]; sayAt(57, 236, "💡 " + I[Math.floor(Math.random() * I.length)], 2400); snd.ding(); } },
-  { x: 282, y: 46, w: 22, h: 26, tip: () => "Кофемашина", go() { sayAt(292, 46, "вжжж… ☕", 1400); snd.printer(); } },
-  { x: 327, y: 48, w: 22, h: 50, tip: () => "Холодильник. Тык — открыть", go() { sayAt(338, 48, ["чей это йогурт?", "кто доел торт?!", "пусто. как всегда"][Math.floor(Math.random() * 3)], 1600); snd.thud(); } },
-  { x: 368, y: 172, w: 30, h: 64, tip: () => "Шкафчик со стикерами", go() { sayAt(383, 172, "хлоп!", 900); snd.thud(); } },
-  { x: 286, y: 248, w: 106, h: 50, tip: () => "Диван. Сюда уходят с ноутом или выдохнуть", go() { sayAt(338, 250, "мягко…", 1000); snd.thud(); } },
-  { x: 2, y: 62, w: 22, h: 106, tip: () => "Дверь", go() { sayAt(14, 100, "тук-тук", 900); snd.thud(); } },
+  { x: 302, y: 24, w: 32, h: 16, tip: () => `Выиграли: ${won.length}. Тык — праздник`, go() { confetti(318, 32); snd.tada(); sayAt(318, 24, `Кубков: ${won.length} · последний — ${won[0] ? pname(won[0]) : "—"}`, 2600); } },
+  { x: 189, y: 244, w: 20, h: 28, tip: () => `Яма неизвестности: ${lost.length}. Тык — бросок бумажкой`, go: throwBall },
+  { x: 254, y: 79, w: 13, h: 15, tip: () => "Ещё одна яма неизвестности. Тык — бросок", go: throwBall },
+  { x: 16, y: 177, w: 38, h: 40, tip: () => DATA.inbox.length ? `Лоток: новых брифов без команды — ${DATA.inbox.length}` : "Принтер и лоток входящих: новых брифов без команды нет", go() { sayAt(35, 177, "бжжж… бумага кончилась", 1400); snd.printer(); } },
+  { x: 54, y: 181, w: 27, h: 43, tip: () => "Тележка с маркерами и скотчем", go() { sayAt(67, 181, "кто опять взял все маркеры?", 1600); snd.blip(600); } },
+  { x: 258, y: 246, w: 22, h: 52, tip: () => S.plant <= 0 ? "Растение просит воды" : "Полить растение", go() { for (let k = 0; k < 10; k++) parts.push({ x: 262 + Math.random() * 12, y: 244, vx: 0, vy: 20 + Math.random() * 20, life: .7, c: "#7FC4EA", s: 1 }); S.plant = Math.min(6, S.plant + 1); store.set("plant", S.plant); snd.drop(); } },
+  { x: 0, y: 200, w: 105, h: 99, tip: () => "Джунгли. Тык — полить", go() { for (let k = 0; k < 16; k++) parts.push({ x: 10 + Math.random() * 80, y: 205, vx: 0, vy: 20 + Math.random() * 20, life: .8, c: "#7FC4EA", s: 1 }); sayAt(50, 206, "буль-буль", 1000); snd.drop(); } },
+  { x: 285, y: 258, w: 48, h: 40, tip: () => "Сундук идей. Тык — достать идею", go() { const I = ["AR-примерочная на кассе", "квест по стикерам на коробке", "живая очередь как шоу", "мерч, который хочется украсть", "промо через Алису", "фотозона, где фотографирует посетитель"]; sayAt(309, 258, "💡 " + I[Math.floor(Math.random() * I.length)], 2400); snd.ding(); } },
+  { x: 335, y: 218, w: 65, h: 81, tip: () => "Колесо. Сюда попадают с перегрузом", go() { const a = actors.filter(x => x.mode === "placed")[0]; sayAt(368, 220, "крутимся, крутимся…", 1500); snd.whoosh(); } },
+  { x: 284, y: 46, w: 17, h: 19, tip: () => "Кофемашина", go() { sayAt(292, 46, "вжжж… ☕", 1400); snd.printer(); } },
+  { x: 327, y: 49, w: 21, h: 49, tip: () => "Холодильник. Тык — открыть", go() { sayAt(338, 49, ["чей это йогурт?", "кто доел торт?!", "пусто. как всегда"][Math.floor(Math.random() * 3)], 1600); snd.thud(); } },
+  { x: 369, y: 172, w: 23, h: 53, tip: () => "Шкафчик со стикерами", go() { sayAt(380, 172, "хлоп!", 900); snd.thud(); } },
+  { x: 340, y: 108, w: 52, h: 80, tip: () => "Диван. Сюда уходят с ноутом или выдохнуть", go() { sayAt(366, 108, "мягко…", 1000); snd.thud(); } },
+  { x: 2, y: 64, w: 20, h: 111, tip: () => "Дверь", go() { sayAt(12, 100, "тук-тук", 900); snd.thud(); } },
 ];
 function throwBall() {
   const from = actors.filter(a => a.mode === "placed");
@@ -1116,7 +1015,8 @@ function confetti(x, y) {
   for (let k = 0; k < (REDUCED ? 12 : 60); k++) parts.push({ x, y, vx: (Math.random() - .5) * 160, vy: -60 - Math.random() * 90, grav: 140, life: 1.8 + Math.random(), c: C[k % C.length], s: 2, floor: 270 });
 }
 const mugHit = i => { const m = SEATS[i].mug; return m ? { x: m[0] - 2, y: m[1] - 2, w: 9, h: 9 } : { x: -99, y: -99, w: 0, h: 0 }; };
-const catHit = () => ({ x: cat.x - 3, y: cat.y - 2, w: 15, h: 10 });
+const catHit = () => ({ x: cat.x - 8, y: cat.y - 13, w: 16, h: 14 });
+const dogHit = () => ({ x: dog.x - 15, y: dog.y - 24, w: 30, h: 25 });
 function actorAt(x, y) {
   let best = null, bd = 1e9;
   const pad = innerWidth <= 720 ? 4 : 1;
@@ -1223,7 +1123,7 @@ scene.addEventListener("pointermove", e => {
     d.moved = true; tip.hidden = true;
     if (d.a && e.pointerType !== "touch") {
       d.drag = true; makeGhost("");
-      const big = document.createElement("canvas"); big.width = 60; big.height = 60; const bx = big.getContext("2d"); bx.imageSmoothingEnabled = false; big.height = 87; bx.imageSmoothingEnabled = false; bx.drawImage(sprite(d.a.p, { pose: "stand" }), 0, 0, 60, 87); big.style.imageRendering = "pixelated"; ghost.appendChild(big);
+      const big = document.createElement("canvas"); big.width = 60; big.height = 60; const bx = big.getContext("2d"); bx.imageSmoothingEnabled = false; { const f = AMAP[fkey(d.a.p, "stand")]; if (f) { big.height = Math.round(60 * f[3] / f[2]); bx.drawImage(ATLAS, f[0], f[1], f[2], f[3], 0, 0, 60, big.height); } } ghost.appendChild(big);
       snd.blip(400);
     } else if (W * layout.S > layout.cw + 1 || H * layout.S > layout.ch + 1) d.pan = { px: S.panX, py: S.panY };
   }
@@ -1251,6 +1151,7 @@ scene.addEventListener("pointerup", e => {
   if (pickMode && a) { const pid = pickMode.pid; stopPick(); dropOn(pid, a.p.name); return; }
   if (pickMode) { stopPick(); return; }
   if (inBox(x, y, catHit())) { pet(); return; }
+  if (inBox(x, y, dogHit())) { petDog(); return; }
   const mugA = actors.find(m => m.mode !== "away" && mugs[m.i].state === "ok" && inBox(x, y, mugHit(m.i)));
   if (mugA && !a) { spill(mugA); return; }
   if (a) { personClick(a, x, y); return; }
@@ -1280,8 +1181,13 @@ function shake(a) {
   say(a, "аааа! скрепки!", 1400); snd.crash();
 }
 function pet() {
-  for (let k = 0; k < 5; k++) parts.push({ x: cat.x + 4, y: cat.y - 2, vx: (Math.random() - .5) * 10, vy: -14 - Math.random() * 6, life: 1.4, c: "#FF8FB5", s: 2 });
-  sayAt(cat.x + 4, cat.y - 3, "мрррр", 1400); snd.purr(); cat.next = performance.now() + 3000;
+  for (let k = 0; k < 5; k++) parts.push({ x: cat.x, y: cat.y - 10, vx: (Math.random() - .5) * 10, vy: -14 - Math.random() * 6, life: 1.4, c: "#FF8FB5", s: 2 });
+  sayAt(cat.x, cat.y - 13, "мрррр", 1400); snd.purr(); cat.next = performance.now() + 3000;
+}
+function petDog() {
+  dog.state = "bow"; dog.tx = dog.x; dog.ty = dog.y; dog.until = performance.now() + 2500;
+  for (let k = 0; k < 6; k++) parts.push({ x: dog.x, y: dog.y - 18, vx: (Math.random() - .5) * 14, vy: -14 - Math.random() * 6, life: 1.4, c: "#FF8FB5", s: 2 });
+  sayAt(dog.x, dog.y - 22, ["гав! 🐾", "*виляет хвостом*", "поиграем?"][Math.floor(Math.random() * 3)], 1400); snd.blip(520);
 }
 function spill(a) {
   const m = mugs[a.i]; m.state = "puddle"; m.t = performance.now();
@@ -1297,9 +1203,9 @@ let panelFor = null;
 function closePanel() { panel.hidden = true; panelFor = null; selSeg = null; }
 function portrait(p, scale = 4) {
   const c = document.createElement("canvas"); c.width = 24 * scale; c.height = 24 * scale;
-  const x = c.getContext("2d"); x.imageSmoothingEnabled = false;
-  x.drawImage(sprite(p, { pose: "stand", cat: true }), 0, 0, 20, 21, 2 * scale, 1 * scale, 20 * scale, 21 * scale);
-  x.fillStyle = "#D4A574"; x.fillRect(0, 20 * scale, c.width, 4 * scale);
+  const x = c.getContext("2d"), key = fkey(p, "stand"), f = AMAP[key];
+  const draw = () => { if (!f) return; const cropH = f[3] * .52, k = c.height * .92 / cropH; x.imageSmoothingQuality = "high"; x.drawImage(ATLAS, f[0], f[1], f[2], cropH, (c.width - f[2] * k) / 2, c.height * .08, f[2] * k, cropH * k); };
+  atlasReady ? draw() : ATLAS.addEventListener("load", draw, { once: true });
   return c;
 }
 let selSeg = null;
