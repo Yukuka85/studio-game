@@ -844,6 +844,11 @@ function look(a, t) {
     if (a.pose === "sitFront" && a.t?.item === "laptop" && ak(p, "laptopFront")) return { key: ak(p, "laptopFront"), face: 1, laptopDrawn: true };
     if (a.pose === "lie" && ak(p, "lieSide")) return { key: ak(p, "lieSide"), face: 1 };
     if (a.pose === "sitBack" && a.microUntil > t && a.micro === "stretch" && ak(p, "stretchBack")) return { key: ak(p, "stretchBack"), face: 1, own: true };
+    // боком за столом: рука на столешнице — рисует стилусом, отпивает из кружки
+    if (a.pose === "sitSide" && a.t?.k === "desk") {
+      if (a.microUntil > t && a.micro === "sip" && ak(p, "sipSide1")) { const ph = 1 - (a.microUntil - t) / (a.microDur || 1500); return { key: ak(p, ph < .2 || ph > .9 ? "sipSide1" : ph < .35 || ph > .75 ? "sipSide2" : "sipSide3"), face: a.face, own: true }; }
+      if (loadOf(p.name, S.day) > 0) { const k = cyc(p, ["drawSide1", "drawSide2", "drawSide3", "drawSide2"], t + a.bob * 997, 260); if (k) return { key: k, face: a.face, own: true }; }
+    }
     if (a.pose === "sitBack" && a.t?.k === "desk" && loadOf(p.name, S.day) > 0) { const st = stateOf(p.name, S.day), k = cyc(p, ["typeBack1", "typeBack2"], t + a.bob * 997, st === "over" ? 160 : st === "flow" ? 240 : 420); if (k) return { key: k, face: 1, own: true }; }
     if (a.pose === "stand" && !sp && a.idleUntil > t && ak(p, "thinkFront1")) return { key: ak(p, "thinkFront1"), face: 1 };
   }
@@ -870,14 +875,14 @@ function drawActor(c2, a, t) {
   // спиной за столом — плечи ходят в такт печати; боком — медленно наклоняется к экрану и обратно
   if (atDesk && l > 0 && a.pose === "sitBack" && !L.own) y -= (Math.floor((t / (st === "over" ? 130 : st === "flow" ? 190 : 330) + a.bob) % 2)) * .35;
   let tilt = 0, sxx = 1, syy = 1;
-  if (atDesk && l > 0 && a.pose === "sitSide") tilt = (L.face || 1) * (.018 + Math.sin(t / 1700 + a.bob * 3) * .018);
+  if (atDesk && l > 0 && a.pose === "sitSide" && !L.own) tilt = (L.face || 1) * (.018 + Math.sin(t / 1700 + a.bob * 3) * .018);
   if (a.mode === "walking") y -= Math.abs(Math.sin(t / 170 * Math.PI)) * .6;
   const micro = a.microUntil > t ? a.micro : null;
   if (micro === "stretch" && !L.own) { const k = Math.sin((1 - (a.microUntil - t) / 900) * Math.PI); syy = 1 + k * .06; sxx = 1 - k * .03; }
   if (L.rot) { const [w, h] = dims(L.key); blit(c2, L.key, x, y - w / 2, 1, L.rot); }
   else if (tilt || sxx !== 1) blitEx(c2, L.key, x, y, L.face, tilt, sxx, syy);
   else blit(c2, L.key, x, y, L.face);
-  if (micro === "sip" && a.pose !== "sitBack" && a.pose !== "standBack") { const [, hh] = dims(L.key); blit(c2, "coffee", x + 4 * (L.face || 1), y - hh * .62); }
+  if (micro === "sip" && !L.own && a.pose !== "sitBack" && a.pose !== "standBack") { const [, hh] = dims(L.key); blit(c2, "coffee", x + 4 * (L.face || 1), y - hh * .62); }
   // в руках: стакан кофе, ноутбук на коленях
   const item = a.t?.item ?? (a.t?.spot ? (a.t.spot.kind === "coffee" ? "coffee" : ["meet", "wheel"].includes(a.t.spot.kind) ? null : "laptop") : null);
   if (a.mode === "placed" && item === "coffee" && a.pose === "stand") blit(c2, "coffee", x + 5, y - 13);
@@ -895,7 +900,7 @@ function workCues(t) {
       if (isDesigner(a.p)) parts.push({ x: g[0] + (Math.random() - .5) * 6, y: g[1], vx: (Math.random() - .5) * 6, vy: -7 - Math.random() * 5, life: 1.6, c: ["#FF8FB5", "#7ED7C1", "#FFC94A", "#B79BFF", "#6FD0FF"][Math.floor(Math.random() * 5)], dot: true });
       else parts.push({ x: g[0] + (Math.random() - .5) * 6, y: g[1], vx: (Math.random() - .5) * 5, vy: -6 - Math.random() * 4, life: 1.8, c: "#E9F6FF", txt: LETTERS[Math.floor(Math.random() * LETTERS.length)] });
     }
-    if (!(a.microUntil > t) && Math.random() < .0009) { a.micro = Math.random() < .5 ? "stretch" : "sip"; a.microUntil = t + (a.micro === "stretch" ? (ak(a.p, "stretchBack") ? 1600 : 900) : 1500); }
+    if (!(a.microUntil > t) && Math.random() < .0009) { a.micro = Math.random() < .5 ? "stretch" : "sip"; a.microDur = a.micro === "stretch" ? (ak(a.p, "stretchBack") ? 1600 : 900) : ak(a.p, "sipSide1") ? 2400 : 1500; a.microUntil = t + a.microDur; }
   });
 }
 function feet(a) { if (a.mode === "hidden" || a.mode === "away") return [a.seat.x, a.seat.y]; return [a.x, a.y]; }
