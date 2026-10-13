@@ -543,12 +543,12 @@ const im = v => v / 5;   // пиксели фона → логические т�
 // Рабочие места (по порядку людей). x, y — низ спрайта сидящего; chair — стул (низ колёсиков), вид и поворот.
 // back: стул спинкой к нам — рисуется поверх человека. side: стул боком — под человеком.
 const SEATS = [
-  { x: im(440), y: im(641), pose: "sitBack", chair: { key: "chair_back", x: im(440), y: im(690), over: true }, plate: [im(440), im(712)], glow: [[im(360), im(330)], [im(490), im(335)]], cat: [im(520), im(420)], lamp: [im(595), im(345)] },
-  { x: im(318), y: im(812), pose: "sitSide", face: -1, chair: { key: "chair_side", x: im(330), y: im(835), face: -1 }, plate: [im(330), im(850)], glow: [[im(140), im(640)]], cat: [im(205), im(700)], mug: [im(250), im(575)], lamp: [im(195), im(545)] },
-  { x: im(802), y: im(800), pose: "sitSide", face: 1, chair: { key: "chair_side2", x: im(790), y: im(822), face: 1 }, plate: [im(790), im(842)], glow: [[im(985), im(560)]], cat: [im(905), im(640)] },
-  { x: im(1206), y: im(800), pose: "sitSide", face: -1, chair: { key: "chair_side", x: im(1218), y: im(822), face: -1 }, plate: [im(1230), im(842)], glow: [[im(1095), im(600)]], cat: [im(1110), im(705)] },
-  { x: im(830), y: im(1191), pose: "sitBack", chair: { key: "chair_back2", x: im(830), y: im(1250), over: true }, plate: [im(830), im(1262)], glow: [[im(825), im(1000)]], cat: [im(700), im(1000)], mug: [im(955), im(1015)] },
-  { x: im(1175), y: im(1191), pose: "sitBack", chair: { key: "chair_back3", x: im(1175), y: im(1250), over: true }, plate: [im(1175), im(1262)], glow: [[im(1175), im(1000)]], cat: [im(1300), im(1010)], mug: [im(1260), im(1030)] },
+  { x: im(455), y: im(535), pose: "sitBack", chair: { key: "chair_back", x: im(455), y: im(584), over: true }, plate: [im(455), im(606)], cup: { key: "coffee", x: im(374), y: im(441) }, glow: [[im(360), im(330)], [im(490), im(335)]], cat: [im(520), im(420)], lamp: [im(595), im(345)] },
+  { x: im(290), y: im(812), pose: "sitSide", face: -1, chair: { key: "chair_side", x: im(302), y: im(835), face: -1 }, plate: [im(302), im(850)], cup: { key: "mug", x: im(240), y: im(772) }, glow: [[im(140), im(640)]], cat: [im(205), im(700)], mug: [im(250), im(575)], lamp: [im(195), im(545)] },
+  { x: im(845), y: im(800), pose: "sitSide", face: 1, chair: { key: "chair_side2", x: im(833), y: im(822), face: 1 }, plate: [im(833), im(842)], cup: { key: "tumbler", x: im(880), y: im(762) }, glow: [[im(985), im(560)]], cat: [im(905), im(640)] },
+  { x: im(1206), y: im(800), pose: "sitSide", face: -1, chair: { key: "chair_side", x: im(1218), y: im(822), face: -1 }, plate: [im(1218), im(842)], cup: { key: "coffee", x: im(1150), y: im(749) }, glow: [[im(1095), im(600)]], cat: [im(1110), im(705)] },
+  { x: im(830), y: im(1165), pose: "sitBack", chair: { key: "chair_back2", x: im(830), y: im(1224), over: true }, plate: [im(830), im(1236)], cup: { key: "mug", x: im(885), y: im(1068) }, glow: [[im(825), im(1000)]], cat: [im(700), im(1000)], mug: [im(955), im(1015)] },
+  { x: im(1175), y: im(1165), pose: "sitBack", chair: { key: "chair_back3", x: im(1175), y: im(1224), over: true }, plate: [im(1175), im(1236)], cup: { key: "mug", x: im(1262), y: im(1068) }, glow: [[im(1175), im(1000)]], cat: [im(1300), im(1010)], mug: [im(1260), im(1030)] },
   { x: im(1792), y: im(800), pose: "sitSide", face: -1, plate: [im(1790), im(945)], glow: [], cat: [im(1600), im(760)] },
 ];
 // Места, куда уходят: штурм у доски (стоя и на креслах-мешках), кофейный угол, диван, сундук, колесо
@@ -829,6 +829,41 @@ const working = i => atSeat(actors[i]) && loadOf(actors[i].p.name, S.day) > 0;
 // доп. кадры анимаций: c_<slug>_<имя>. Есть пока только у Вадима, остальным — обычные позы
 const ak = (p, name) => { const k = `c_${SLUG(p)}_${name}`; return AMAP[k] ? k : null; };
 const cyc = (p, names, t, ms) => { const ks = names.map(n => ak(p, n)).filter(Boolean); return ks.length ? ks[Math.floor(t / ms) % ks.length] : null; };
+// За столом: у каждого свой набор занятий (кадры c_<slug>_d_<занятие><n>), руки тянутся к предметам на его столе.
+// Работа идёт отрезками (печатает, мышка, рисует, пишет) с паузами; изредка — кружка, «думает», чешет голову, потягивается.
+const DACTS = {};
+Object.keys(AMAP).forEach(k => { const m = k.match(/^c_(\w+?)_d_([a-z]+)(\d)$/); if (m) { const d = DACTS[m[1]] ||= {}; d[m[2]] = Math.max(d[m[2]] || 0, +m[3]); } });
+const WORK_ACTS = { type: 140, mouse: 520, draw: 260, write: 240 };
+const ONCE_ACTS = { sip: [1, 350, 2, 300, 3, 1200, 2, 300, 1, 350], think: [1, 1500, 2, 500, 1, 1300], scratch: [1, 200, 2, 200, 1, 200, 2, 200, 1, 200, 2, 200], stretch: [1, 400, 2, 1000, 1, 400] };
+function nextDeskAct(a, t) {
+  const acts = DACTS[SLUG(a.p)], working = loadOf(a.p.name, S.day) > 0, st = stateOf(a.p.name, S.day);
+  const work = Object.keys(acts).filter(k => WORK_ACTS[k]), once = Object.keys(acts).filter(k => ONCE_ACTS[k]);
+  const prev = a.da?.name;
+  // после работы — короткая пауза; после паузы — снова работа; иногда — что-то короткое
+  if (once.length && prev !== "idle" && !ONCE_ACTS[prev] && Math.random() < (working ? (st === "over" ? .2 : .3) : .5)) {
+    const name = once[Math.floor(Math.random() * once.length)], seq = ONCE_ACTS[name].slice();
+    for (let i = 0; i < seq.length; i += 2) seq[i] = Math.min(seq[i], acts[name]);
+    return { name, t0: t, seq, dur: seq.filter((v, i) => i % 2).reduce((x, y) => x + y, 0) };
+  }
+  if (!working || !work.length || (prev && prev !== "idle" && Math.random() < .55)) return { name: "idle", t0: t, dur: 700 + Math.random() * (working ? 1500 : 5000) };
+  const name = work.length > 1 && prev && WORK_ACTS[prev] && Math.random() < .5 ? work.filter(k => k !== prev)[Math.floor(Math.random() * (work.length - 1))] : work[Math.floor(Math.random() * work.length)];
+  return { name, t0: t, dur: 3000 + Math.random() * 6000 * (st === "over" ? 1.5 : 1) };
+}
+function deskLook(a, t) {
+  const s = SLUG(a.p), face = a.pose === "sitSide" ? a.face : 1;
+  if (!a.da || t > a.da.t0 + a.da.dur || t < a.da.t0) a.da = nextDeskAct(a, t);
+  const { name, t0, seq } = a.da, n = DACTS[s][name];
+  if (name === "idle") return { key: AMAP[`c_${s}_desk`] ? `c_${s}_desk` : fkey(a.p, a.pose), face, own: a.pose === "sitSide" };
+  if (seq) {                                      // разовое: кадры по расписанию
+    let e = t - t0, i = 0;
+    while (i < seq.length - 2 && e > seq[i + 1]) { e -= seq[i + 1]; i += 2; }
+    return { key: `c_${s}_d_${name}${seq[i]}`, face, own: true, cup: name === "sip" };
+  }
+  const order = n >= 3 ? [1, 2, 3, 2] : [1, 2], ms = WORK_ACTS[name] * (stateOf(a.p.name, S.day) === "over" ? .8 : 1);
+  const step = order[Math.floor((t - t0 + a.bob * 331) / ms) % order.length];
+  // со спины печать почти не видна (руки за головой) — оставляем живое покачивание головы
+  return { key: `c_${s}_d_${name}${step}`, face, own: !(name === "type" && a.pose === "sitBack") };
+}
 // какой кадр сейчас у человека
 function look(a, t) {
   const p = a.p;
@@ -843,14 +878,7 @@ function look(a, t) {
     if (sp === "coffee" && a.pose === "standSide" && ak(p, "coffeeSide")) return { key: ak(p, "coffeeSide"), face: a.face };
     if (a.pose === "sitFront" && a.t?.item === "laptop" && ak(p, "laptopFront")) return { key: ak(p, "laptopFront"), face: 1, laptopDrawn: true };
     if (a.pose === "lie" && ak(p, "lieSide")) return { key: ak(p, "lieSide"), face: 1 };
-    if (a.pose === "sitBack" && a.microUntil > t && a.micro === "stretch" && ak(p, "stretchBack")) return { key: ak(p, "stretchBack"), face: 1, own: true };
-    // боком за столом: рука на столешнице — рисует стилусом, отпивает из кружки
-    if (a.pose === "sitSide" && a.t?.k === "desk") {
-      if (a.microUntil > t && a.micro === "sip" && ak(p, "sipSide1")) { const ph = 1 - (a.microUntil - t) / (a.microDur || 1500); return { key: ak(p, ph < .2 || ph > .9 ? "sipSide1" : ph < .35 || ph > .75 ? "sipSide2" : "sipSide3"), face: a.face, own: true }; }
-      if (loadOf(p.name, S.day) > 0) { const k = cyc(p, ["drawSide1", "drawSide2", "drawSide3", "drawSide2"], t + a.bob * 997, 260); if (k) return { key: k, face: a.face, own: true }; }
-      if (ak(p, "deskSide")) return { key: ak(p, "deskSide"), face: a.face, own: true };   // ноги под столом
-    }
-    if (a.pose === "sitBack" && a.t?.k === "desk" && loadOf(p.name, S.day) > 0) { const st = stateOf(p.name, S.day), k = cyc(p, ["typeBack1", "typeBack2"], t + a.bob * 997, st === "over" ? 160 : st === "flow" ? 240 : 420); if (k) return { key: k, face: 1, own: true }; }
+    if (a.t?.k === "desk" && DACTS[SLUG(p)]) return deskLook(a, t);
     if (a.pose === "stand" && !sp && a.idleUntil > t && ak(p, "thinkFront1")) return { key: ak(p, "thinkFront1"), face: 1 };
   }
   const turned = a.offendedUntil > t || (a.spinUntil > t && Math.floor(t / 180) % 2);
@@ -901,7 +929,7 @@ function workCues(t) {
       if (isDesigner(a.p)) parts.push({ x: g[0] + (Math.random() - .5) * 6, y: g[1], vx: (Math.random() - .5) * 6, vy: -7 - Math.random() * 5, life: 1.6, c: ["#FF8FB5", "#7ED7C1", "#FFC94A", "#B79BFF", "#6FD0FF"][Math.floor(Math.random() * 5)], dot: true });
       else parts.push({ x: g[0] + (Math.random() - .5) * 6, y: g[1], vx: (Math.random() - .5) * 5, vy: -6 - Math.random() * 4, life: 1.8, c: "#E9F6FF", txt: LETTERS[Math.floor(Math.random() * LETTERS.length)] });
     }
-    if (!(a.microUntil > t) && Math.random() < .0009) { a.micro = Math.random() < .5 ? "stretch" : "sip"; a.microDur = a.micro === "stretch" ? (ak(a.p, "stretchBack") ? 1600 : 900) : ak(a.p, "sipSide1") ? 2400 : 1500; a.microUntil = t + a.microDur; }
+    if (!(a.microUntil > t) && !DACTS[SLUG(a.p)] && Math.random() < .0009) { a.micro = Math.random() < .5 ? "stretch" : "sip"; a.microDur = a.micro === "stretch" ? (ak(a.p, "stretchBack") ? 1600 : 900) : ak(a.p, "sipSide1") ? 2400 : 1500; a.microUntil = t + a.microDur; }
   });
 }
 function feet(a) { if (a.mode === "hidden" || a.mode === "away") return [a.seat.x, a.seat.y]; return [a.x, a.y]; }
@@ -972,6 +1000,7 @@ function render(t) {
       L.push({ z: ch.over ? ch.y + dy : s.y - .5, d: () => blit(sx2, ch.key, ch.x + dx, ch.y + dy, ch.face || 1) });
     }
     if (a.mode !== "hidden" && a.mode !== "away") L.push({ z: a.y, d: () => drawActor(sx2, a, t) });
+    if (s?.cup && !(atSeat(a) && a.da?.name === "sip")) L.push({ z: s.cup.y, d: () => blit(sx2, s.cup.key, s.cup.x, s.cup.y) });
   });
   const runner = actors.find(a => a.mode === "placed" && a.pose === "run");
   L.push({ z: im(1460), d: () => { if (WHEEL.complete && WHEEL.naturalWidth) { const k = 1 / 5; sx2.drawImage(WHEEL, im(1660), im(1080), WHEEL.naturalWidth * k, WHEEL.naturalHeight * k); } } });
