@@ -706,45 +706,55 @@ function stepActors(dt) {
 /* ---------- монстрики: случайные гости, ненадолго ---------- */
 const mon = { kind: null };
 let nextMon = performance.now() + 15000 + Math.random() * 15000;
-const MON_NAME = { ghost: "Призрак", slime: "Слизь", zombie: "Зомби", tangle: "Клубок" };
+const MON_NAME = { ghost: "Призрак", slime: "Кислотный куб", zombie: "Зомби", tangle: "Клубок" };
 const nearest = (x, y, r = 60) => actors.filter(a => a.mode === "placed").map(a => [a, Math.hypot(a.x - x, a.y - y)]).filter(([, d]) => d < r).sort((p, q) => p[1] - q[1])[0]?.[0];
 function spawnMonster(kind) {
   const now = performance.now();
   kind = kind || ["ghost", "slime", "zombie", "tangle"][Math.floor(Math.random() * 4)];
-  Object.assign(mon, { kind, t0: now, phase: "in", alpha: 1, scale: 1, rot: 0, said: false, face: 1 });
+  Object.assign(mon, { kind, t0: now, phase: "in", alpha: 1, scale: 1, rot: 0, said: false, face: 1, dir: "side", green: false });
   if (kind === "ghost") {
-    const side = Math.random() < .5 ? -1 : 1, desks = actors.filter(a => a.mode === "placed" && a.t?.k === "desk");
-    const target = desks[Math.floor(Math.random() * desks.length)];
-    Object.assign(mon, { x: side < 0 ? -20 : W + 20, y: 150 + Math.random() * 30, tx: target ? target.seat.cat[0] : 200, ty: target ? target.seat.cat[1] + 10 : 160, victim: target, exit: side < 0 ? W + 30 : -30 });
+    const side = Math.random() < .5 ? -1 : 1;
+    // либо крадёт кофе у работающего, либо садится подремать на пустой стул
+    const empty = SEATS.map((s2, i) => ({ s2, i })).filter(({ s2, i }) => s2.chair && !atSeat(actors[i]));
+    const desks = actors.filter(a => a.mode === "placed" && a.t?.k === "desk");
+    const nap = empty.length && Math.random() < .45;
+    const target = nap ? null : desks[Math.floor(Math.random() * desks.length)];
+    const chair = nap ? empty[Math.floor(Math.random() * empty.length)].s2.chair : null;
+    Object.assign(mon, { x: side < 0 ? -20 : W + 20, y: 150 + Math.random() * 30, victim: target, nap: !!chair, green: Math.random() < .3,
+      tx: chair ? chair.x : target ? target.seat.cat[0] : 200, ty: chair ? chair.y - 4 : target ? target.seat.cat[1] + 10 : 160, exit: side < 0 ? W + 30 : -30 });
   } else if (kind === "slime") {
-    Object.assign(mon, { x: 120 + Math.random() * 180, y: 176 + Math.random() * 12, drop: 70, phase: "drop", dir: Math.random() < .5 ? -1 : 1 });
+    Object.assign(mon, { x: 120 + Math.random() * 180, y: 176 + Math.random() * 12, drop: 70, phase: "drop", face: Math.random() < .5 ? -1 : 1 });
   } else if (kind === "zombie") {
     Object.assign(mon, { x: -14, y: ROWS.mid + 2, face: 1, scared: new Set() });
     sayAt(10, ROWS.mid - 44, "мозги… бриф…", 2200);
-  } else {
-    Object.assign(mon, { x: W + 20, y: ROWS.bot + 2, face: -1 });
-  }
+  } else Object.assign(mon, { x: W + 20, y: ROWS.bot + 2, face: -1 });
   nextMon = now + 60000 + Math.random() * 60000;
 }
 function endMonster() { mon.kind = null; }
 function stepMonster(dt, now) {
   if (!mon.kind) { if (now > nextMon && !REDUCED && shade.hidden) spawnMonster(); return; }
   const age = (now - mon.t0) / 1000;
+  if (mon.phase === "dead") { mon.alpha = clamp(1 - (age - mon.deadAt - .8) / .6, 0, 1); if (age - mon.deadAt > 1.4) endMonster(); return; }
   if (mon.kind === "ghost") {
     const tx = mon.phase === "out" ? mon.exit : mon.tx, ty = mon.phase === "out" ? mon.y : mon.ty;
     const dx = tx - mon.x, dy = ty - mon.y, d = Math.hypot(dx, dy), sp = (mon.phase === "out" ? 70 : 45) * dt;
-    if (mon.phase === "steal") { if (age - mon.stealAt > 2.4) mon.phase = "out"; }
-    else if (d > sp) { mon.x += dx / d * sp; mon.y += dy / d * sp; mon.face = dx < 0 ? -1 : 1; }
-    else if (mon.phase === "in") { mon.phase = "steal"; mon.stealAt = age; if (mon.victim?.mode === "placed") say(mon.victim, "эй, мой кофе!", 1800); snd.whoosh(); }
+    if (mon.phase === "steal" || mon.phase === "nap") { if (age - mon.stopAt > (mon.phase === "nap" ? 4.5 : 2.4)) mon.phase = "out"; }
+    else if (d > sp) { mon.x += dx / d * sp; mon.y += dy / d * sp; mon.face = dx < 0 ? -1 : 1; mon.dir = Math.abs(dy) > Math.abs(dx) ? (dy < 0 ? "up" : "down") : "side"; }
+    else if (mon.phase === "in") {
+      mon.stopAt = age;
+      if (mon.nap) { mon.phase = "nap"; const v = nearest(mon.x, mon.y, 90); if (v) say(v, "кто-то сидит на моём стуле?..", 1800); }
+      else { mon.phase = "steal"; if (mon.victim?.mode === "placed") say(mon.victim, "эй, мой кофе!", 1800); }
+      snd.whoosh();
+    }
     else endMonster();
-    mon.alpha = .82 + Math.sin(now / 200) * .12;
+    mon.alpha = .84 + Math.sin(now / 200) * .1;
   } else if (mon.kind === "slime") {
     if (mon.phase === "drop") { mon.drop -= (40 + age * 160) * dt; if (mon.drop <= 0) { mon.drop = 0; mon.phase = "splat"; mon.splatAt = age; snd.splash(); for (let k = 0; k < 12; k++) parts.push({ x: mon.x, y: mon.y - 6, vx: (Math.random() - .5) * 60, vy: -30 - Math.random() * 30, grav: 120, life: 1.2, c: "#A6E05A", s: 2, floor: mon.y }); const v = nearest(mon.x, mon.y); if (v) say(v, "фу, правки!", 1600); } }
     else if (mon.phase === "splat") { if (age - mon.splatAt > .9) { mon.phase = "crawl"; mon.crawlAt = age; } }
-    else if (mon.phase === "crawl") { mon.x = clamp(mon.x + mon.dir * 8 * dt, 20, 380); mon.face = mon.dir; if (age - mon.crawlAt > 7) { mon.phase = "melt"; mon.meltAt = age; } }
-    else { mon.scale = Math.max(0, 1 - (age - mon.meltAt) / 1.2); if (mon.scale <= 0) endMonster(); }
+    else if (mon.phase === "crawl") { mon.x = clamp(mon.x + mon.face * 9 * dt, 20, 380); if (age - mon.crawlAt > 7) { mon.phase = "melt"; mon.meltAt = age; } }
+    else { if (age - mon.meltAt > 2.6) endMonster(); mon.alpha = clamp(1 - (age - mon.meltAt - 1.8) / .8, 0, 1); }
   } else if (mon.kind === "zombie") {
-    mon.x += 22 * dt;
+    mon.x += 20 * dt;
     actors.forEach(a => { if (a.mode === "placed" && !mon.scared.has(a) && Math.abs(a.x - mon.x) < 18 && Math.abs(a.y - mon.y) < 50) { mon.scared.add(a); say(a, ["а-а-а!", "только не сейчас", "это клиент?"][mon.scared.size % 3], 1500); a.spinUntil = now + 1200; } });
     if (mon.x > W + 20) endMonster();
   } else {
@@ -755,30 +765,50 @@ function stepMonster(dt, now) {
   }
 }
 function monKey(t) {
-  const step = Math.floor(t / 380) % 2;
-  if (mon.kind === "ghost") return mon.phase === "steal" ? "m_ghost_play" : mon.phase === "out" ? "m_ghost_float" : step ? "m_ghost_side" : "m_ghost_float";
-  if (mon.kind === "slime") return mon.phase === "splat" ? "m_slime_splat" : mon.phase === "crawl" ? (step ? "m_slime_side" : "m_slime_front") : "m_slime_front";
-  if (mon.kind === "zombie") return step ? "m_zombie_walk" : "m_zombie_side";
-  return "m_tangle_roll";
+  const step = Math.floor(t / 300) % 2, has = k => AMAP[k] ? k : null;
+  if (mon.kind === "ghost") {
+    if (mon.green) return mon.phase === "steal" || mon.phase === "nap" ? "m_gghost_idleF" : mon.dir === "up" ? "m_gghost_idleB" : mon.dir === "down" ? "m_gghost_idleF" : "m_gghost_idleS";
+    if (mon.phase === "nap") return has("m_ghost_sleepy") || "m_ghost_front";
+    if (mon.phase === "steal") return "m_ghost_play";
+    if (mon.dir === "up") return has("m_ghost_walkB") || "m_ghost_back";
+    if (mon.dir === "down") return (step ? has("m_ghost_walkF") : has("m_ghost_walkF2")) || "m_ghost_front";
+    return (step ? has("m_ghost_walkS") : has("m_ghost_walkS2")) || "m_ghost_float";
+  }
+  if (mon.kind === "slime") {
+    if (mon.phase === "dead") return has("m_cube_puddle") || "m_slime_splat";
+    if (mon.phase === "splat") return "m_slime_splat";
+    if (mon.phase === "melt") { const k = (performance.now() - mon.t0) / 1000 - mon.meltAt; return has(k < .6 ? "m_cube_melt1" : k < 1.2 ? "m_cube_melt2" : k < 1.8 ? "m_cube_melt3" : "m_cube_puddle") || "m_slime_front"; }
+    if (mon.phase === "crawl") return (step ? has("m_cube_walkS") : has("m_cube_idleS")) || "m_slime_side";
+    return has("m_cube_idleF") || "m_slime_front";
+  }
+  if (mon.kind === "zombie") return mon.phase === "dead" ? (has("m_zombie_dead") || "m_zombie_front") : ["m_zombie_walk", "m_zombie_walkS2", "m_zombie_side", "m_zombie_walkS3"].map(has).filter(Boolean)[Math.floor(t / 260) % 4] || "m_zombie_walk";
+  if (mon.phase === "dead") return has("m_tangle_dead") || "m_tangle_roll";
+  return ["m_tangle_roll", "m_tangle_r1", "m_tangle_r2", "m_tangle_r3", "m_tangle_r4"].map(has).filter(Boolean)[Math.floor(t / 120) % 5] || "m_tangle_roll";
 }
 function drawMonster(c2, t) {
   const key = monKey(t), f = AMAP[key]; if (!f) return;
   const [w, h] = dims(key), y = mon.kind === "ghost" ? mon.y - 30 + Math.sin(t / 300) * 2 : mon.kind === "slime" ? mon.y - mon.drop : mon.y;
-  c2.save(); c2.globalAlpha = mon.alpha ?? 1; c2.translate(mon.x, y);
-  if (mon.kind === "tangle") { c2.translate(0, -h / 2); c2.rotate(mon.rot); c2.drawImage(ATLAS, f[0], f[1], f[2], f[3], -w / 2, -h / 2, w, h); }
-  else { const fc = (mon.kind === "ghost" && mon.phase !== "steal") || mon.kind === "slime" ? -mon.face : mon.face; c2.scale(fc < 0 ? -mon.scale : mon.scale, mon.scale); c2.drawImage(ATLAS, f[0], f[1], f[2], f[3], -w / 2, -h, w, h); }
+  c2.save(); c2.globalAlpha = mon.alpha ?? 1; c2.translate(mon.x, mon.kind === "ghost" && mon.phase === "nap" ? mon.y : y);
+  if (mon.kind === "tangle" && mon.phase !== "dead") { c2.translate(0, -h / 2); c2.rotate(mon.rot); c2.drawImage(ATLAS, f[0], f[1], f[2], f[3], -w / 2, -h / 2, w, h); }
+  else {
+    // у призрака и куба боковые кадры смотрят влево — разворачиваем по направлению движения
+    const flip = (mon.kind === "ghost" && mon.dir === "side" && !["steal", "nap"].includes(mon.phase)) || (mon.kind === "slime" && mon.phase === "crawl") ? -mon.face : mon.kind === "zombie" ? mon.face : 1;
+    c2.scale(flip < 0 ? -mon.scale : mon.scale, mon.scale); c2.drawImage(ATLAS, f[0], f[1], f[2], f[3], -w / 2, -h, w, h);
+  }
   c2.restore();
 }
 function monHit(x, y) {
-  if (!mon.kind) return false;
-  const [w, h] = dims(monKey(performance.now())), my = mon.kind === "ghost" ? mon.y - 30 : mon.kind === "slime" ? mon.y - mon.drop : mon.y;
+  if (!mon.kind || mon.phase === "dead") return false;
+  const [w, h] = dims(monKey(performance.now())), my = mon.kind === "ghost" ? (mon.phase === "nap" ? mon.y : mon.y - 30) : mon.kind === "slime" ? mon.y - mon.drop : mon.y;
   return x > mon.x - w / 2 && x < mon.x + w / 2 && y > my - h && y < my + 2;
 }
 function chaseMonster() {
   const [w, h] = dims(monKey(performance.now()));
-  for (let k = 0; k < 18; k++) parts.push({ x: mon.x, y: mon.y - h / 2, vx: (Math.random() - .5) * 50, vy: -10 - Math.random() * 30, life: 1.1, c: "#D8DAEA", puff: true });
+  for (let k = 0; k < 18; k++) parts.push({ x: mon.x, y: mon.y - h / 2, vx: (Math.random() - .5) * 50, vy: -10 - Math.random() * 30, life: 1.1, c: mon.kind === "ghost" ? "#E6F2FF" : mon.kind === "slime" ? "#B9F06A" : "#D8DAEA", puff: true });
   S.chased = (store.get("chased", 0) || 0) + 1; store.set("chased", S.chased);
-  sayAt(mon.x, mon.y - h, `${MON_NAME[mon.kind]} прогнан! Всего прогнано: ${S.chased}`, 1800); snd.tada(); endMonster();
+  sayAt(mon.x, mon.y - h, `${MON_NAME[mon.kind]} прогнан! Всего прогнано: ${S.chased}`, 1800); snd.tada();
+  if (mon.kind === "ghost") { endMonster(); return; }
+  mon.phase = "dead"; mon.deadAt = (performance.now() - mon.t0) / 1000; mon.rot = 0; if (mon.kind === "slime") mon.drop = 0;
 }
 
 /* ---------- рисование ---------- */
@@ -796,8 +826,27 @@ const darkness = h => h < 9 ? 1 : h < 10 ? 1 - (h - 9) : h < 17.5 ? 0 : h < 19.5
 const atSeat = a => a && a.mode === "placed" && a.t?.k === "desk";
 const working = i => atSeat(actors[i]) && loadOf(actors[i].p.name, S.day) > 0;
 
+// доп. кадры анимаций: c_<slug>_<имя>. Есть пока только у Вадима, остальным — обычные позы
+const ak = (p, name) => { const k = `c_${SLUG(p)}_${name}`; return AMAP[k] ? k : null; };
+const cyc = (p, names, t, ms) => { const ks = names.map(n => ak(p, n)).filter(Boolean); return ks.length ? ks[Math.floor(t / ms) % ks.length] : null; };
 // какой кадр сейчас у человека
 function look(a, t) {
+  const p = a.p;
+  if (a.joyUntil > t) { const k = cyc(p, ["joy1", "joy2"], t, 180); if (k) return { key: k, face: 1 }; }
+  if (a.mode === "walking" && a.dir === "side") { const k = cyc(p, ["walkSide1", "walkSide2", "walkSide3", "walkSide2"], t, 140); if (k) return { key: k, face: a.face }; }
+  if (a.mode === "placed") {
+    const sp = a.t?.spot?.kind;
+    if (a.pose === "run") { const k = cyc(p, ["walkSide1", "walkSide2", "walkSide3", "walkSide2"], t, 95); if (k) return { key: k, face: 1 }; }
+    if (sp === "meet" && a.pose === "standBack") { const k = cyc(p, ["thinkBack1", "thinkBack2"], t, 1100); if (k) return { key: k, face: 1 }; }
+    if (sp === "coffee" && a.pose === "stand" && ak(p, "coffeeFront")) return { key: Math.floor(t / 1800) % 2 ? ak(p, "coffeeFront") : fkey(p, "stand"), face: 1 };
+    if (sp === "coffee" && a.pose === "standBack" && ak(p, "coffeeBack")) return { key: ak(p, "coffeeBack"), face: 1 };
+    if (sp === "coffee" && a.pose === "standSide" && ak(p, "coffeeSide")) return { key: ak(p, "coffeeSide"), face: a.face };
+    if (a.pose === "sitFront" && a.t?.item === "laptop" && ak(p, "laptopFront")) return { key: ak(p, "laptopFront"), face: 1, laptopDrawn: true };
+    if (a.pose === "lie" && ak(p, "lieSide")) return { key: ak(p, "lieSide"), face: 1 };
+    if (a.pose === "sitBack" && a.microUntil > t && a.micro === "stretch" && ak(p, "stretchBack")) return { key: ak(p, "stretchBack"), face: 1, own: true };
+    if (a.pose === "sitBack" && a.t?.k === "desk" && loadOf(p.name, S.day) > 0) { const st = stateOf(p.name, S.day), k = cyc(p, ["typeBack1", "typeBack2"], t + a.bob * 997, st === "over" ? 160 : st === "flow" ? 240 : 420); if (k) return { key: k, face: 1, own: true }; }
+    if (a.pose === "stand" && !sp && a.idleUntil > t && ak(p, "thinkFront1")) return { key: ak(p, "thinkFront1"), face: 1 };
+  }
   const turned = a.offendedUntil > t || (a.spinUntil > t && Math.floor(t / 180) % 2);
   if (a.mode === "walking") {
     const step = Math.floor(t / 170) % 2;
@@ -819,12 +868,12 @@ function drawActor(c2, a, t) {
   if (a.shakeUntil > t) x += Math.sin(t / 25) * 1.2;
   const atDesk = a.t?.k === "desk", st = stateOf(a.p.name, S.day), l = loadOf(a.p.name, S.day);
   // спиной за столом — плечи ходят в такт печати; боком — медленно наклоняется к экрану и обратно
-  if (atDesk && l > 0 && a.pose === "sitBack") y -= (Math.floor((t / (st === "over" ? 130 : st === "flow" ? 190 : 330) + a.bob) % 2)) * .35;
+  if (atDesk && l > 0 && a.pose === "sitBack" && !L.own) y -= (Math.floor((t / (st === "over" ? 130 : st === "flow" ? 190 : 330) + a.bob) % 2)) * .35;
   let tilt = 0, sxx = 1, syy = 1;
   if (atDesk && l > 0 && a.pose === "sitSide") tilt = (L.face || 1) * (.018 + Math.sin(t / 1700 + a.bob * 3) * .018);
   if (a.mode === "walking") y -= Math.abs(Math.sin(t / 170 * Math.PI)) * .6;
   const micro = a.microUntil > t ? a.micro : null;
-  if (micro === "stretch") { const k = Math.sin((1 - (a.microUntil - t) / 900) * Math.PI); syy = 1 + k * .06; sxx = 1 - k * .03; }
+  if (micro === "stretch" && !L.own) { const k = Math.sin((1 - (a.microUntil - t) / 900) * Math.PI); syy = 1 + k * .06; sxx = 1 - k * .03; }
   if (L.rot) { const [w, h] = dims(L.key); blit(c2, L.key, x, y - w / 2, 1, L.rot); }
   else if (tilt || sxx !== 1) blitEx(c2, L.key, x, y, L.face, tilt, sxx, syy);
   else blit(c2, L.key, x, y, L.face);
@@ -832,7 +881,7 @@ function drawActor(c2, a, t) {
   // в руках: стакан кофе, ноутбук на коленях
   const item = a.t?.item ?? (a.t?.spot ? (a.t.spot.kind === "coffee" ? "coffee" : ["meet", "wheel"].includes(a.t.spot.kind) ? null : "laptop") : null);
   if (a.mode === "placed" && item === "coffee" && a.pose === "stand") blit(c2, "coffee", x + 5, y - 13);
-  if (a.mode === "placed" && item === "laptop" && a.pose === "sitFront") blit(c2, "laptop", x, y - 4);
+  if (a.mode === "placed" && item === "laptop" && a.pose === "sitFront" && !L.laptopDrawn) blit(c2, "laptop", x, y - 4);
   if (a.mode === "placed" && item === "laptop" && a.pose === "sitSide" && !atDesk) blit(c2, "laptop", x + 4 * (a.face || 1), y - 7, a.face);
   if (a.mode === "placed" && atDesk && st === "over" && Math.random() < .05 && !REDUCED) parts.push({ x: a.x + (Math.random() - .5) * 6, y: a.y - dims(L.key)[1], vx: (Math.random() - .5) * 5, vy: -9, life: 1.6, c: "#D8DAEA", puff: true });
 }
@@ -846,7 +895,7 @@ function workCues(t) {
       if (isDesigner(a.p)) parts.push({ x: g[0] + (Math.random() - .5) * 6, y: g[1], vx: (Math.random() - .5) * 6, vy: -7 - Math.random() * 5, life: 1.6, c: ["#FF8FB5", "#7ED7C1", "#FFC94A", "#B79BFF", "#6FD0FF"][Math.floor(Math.random() * 5)], dot: true });
       else parts.push({ x: g[0] + (Math.random() - .5) * 6, y: g[1], vx: (Math.random() - .5) * 5, vy: -6 - Math.random() * 4, life: 1.8, c: "#E9F6FF", txt: LETTERS[Math.floor(Math.random() * LETTERS.length)] });
     }
-    if (!(a.microUntil > t) && Math.random() < .0009) { a.micro = Math.random() < .5 ? "stretch" : "sip"; a.microUntil = t + (a.micro === "stretch" ? 900 : 1500); }
+    if (!(a.microUntil > t) && Math.random() < .0009) { a.micro = Math.random() < .5 ? "stretch" : "sip"; a.microUntil = t + (a.micro === "stretch" ? (ak(a.p, "stretchBack") ? 1600 : 900) : 1500); }
   });
 }
 function feet(a) { if (a.mode === "hidden" || a.mode === "away") return [a.seat.x, a.seat.y]; return [a.x, a.y]; }
@@ -1306,7 +1355,7 @@ function personClick(a, x, y) {
     const [bw, bh] = sizeOf(a), lx = x - (a.x - bw / 2), ly = y - (a.y - bh);
     if (ly >= 5 && ly <= 16 && (lx <= 5 || lx >= bw - 5) && quick === 1) { clearTimeout(a.openT); say(a, "ай! ☝️", 1200); snd.ouch(); return; }
   }
-  if (quick >= 3) { clearTimeout(a.openT); a.shakeUntil = now + 900; say(a, ["ха-ха-ха!", "хи-хи, щекотно!", "ахаха, хватит!"][Math.floor(Math.random() * 3)], 1400); snd.laugh(); return; }
+  if (quick >= 3) { clearTimeout(a.openT); a.shakeUntil = ak(a.p, "joy1") ? 0 : now + 900; a.joyUntil = now + 1500; say(a, ["ха-ха-ха!", "хи-хи, щекотно!", "ахаха, хватит!"][Math.floor(Math.random() * 3)], 1400); snd.laugh(); return; }
   clearTimeout(a.openT);
   a.openT = setTimeout(() => { if (a.clicks.filter(t => performance.now() - t < 700).length < 3) openPerson(a.p.name); }, 300);
 }

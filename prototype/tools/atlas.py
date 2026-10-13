@@ -104,7 +104,49 @@ def monsters():
             out[f"m_{kind}_{MON_POSES[kind][ci]}"] = img.resize((round(img.width * .5), round(img.height * .5)), Image.LANCZOS)
     return out
 
-sprites = {**chars(), **props(), **monsters()}
+CUT2 = os.path.join(HERE, "assets", "cut2")
+# доп. кадры: анимации Вадима (vb_*) и новые кадры монстриков (mo_*), имена → ключи атласа
+EXTRA = {
+    "c_vadim_walkSide1": "vb_r0c6", "c_vadim_walkSide2": "vb_r0c7", "c_vadim_walkSide3": "vb_r0c8",
+    "c_vadim_typeBack1": "vb_r2c5", "c_vadim_typeBack2": "vb_r2c8", "c_vadim_stretchBack": "vb_r3c7",
+    "c_vadim_coffeeFront": "vb_r3c0", "c_vadim_coffeeSide": "vb_r3c2", "c_vadim_coffeeBack": "vb_r3c8",
+    "c_vadim_thinkBack1": "vb_r5c4", "c_vadim_thinkBack2": "vb_r5c5", "c_vadim_thinkFront1": "vb_r5c0", "c_vadim_thinkFront2": "vb_r5c1",
+    "c_vadim_joy1": "vb_r4c1", "c_vadim_joy2": "vb_r4c2", "c_vadim_wave": "vb_r4c0", "c_vadim_idea": "vb_r5c6",
+    "c_vadim_laptopFront": "vb_r2c4", "c_vadim_lieSide": "vb_r6c7",
+    "m_ghost_idleF": "mo_r0c0", "m_ghost_idleB": "mo_r0c1", "m_ghost_idleS": "mo_r0c2", "m_ghost_walkF": "mo_r0c3", "m_ghost_walkB": "mo_r0c4",
+    "m_ghost_walkS": "mo_r0c5", "m_ghost_sitB": "mo_r0c6", "m_ghost_sitS": "mo_r0c7", "m_ghost_sleepy": "mo_r0c8",
+    "m_ghost_walkF2": "mo_r1c3", "m_ghost_walkS2": "mo_r1c5", "m_ghost_sad": "mo_r1c8",
+    "m_gghost_idleF": "mo_r1c0", "m_gghost_idleB": "mo_r1c1", "m_gghost_idleS": "mo_r1c2",
+    "m_cube_idleF": "mo_r2c0", "m_cube_idleB": "mo_r2c1", "m_cube_idleS": "mo_r2c2", "m_cube_walkF": "mo_r2c3", "m_cube_walkB": "mo_r2c4",
+    "m_cube_walkS": "mo_r2c5", "m_cube_melt1": "mo_r2c6", "m_cube_melt2": "mo_r2c7", "m_cube_melt3": "mo_r2c8", "m_cube_puddle": "mo_r2c9",
+    "m_zombie_walkS2": "mo_r3c5", "m_zombie_walkS3": "mo_r4c5", "m_zombie_dead": "mo_r3c9",
+    "m_tangle_r1": "mo_r5c1", "m_tangle_r2": "mo_r5c3", "m_tangle_r3": "mo_r5c5", "m_tangle_r4": "mo_r5c7", "m_tangle_dead": "mo_r5c9",
+}
+
+def despeck(img):
+    """Синие крошки фона, прилипшие к краю: мелкие синие островки, касающиеся прозрачного. Джинсы (крупные) не трогаем."""
+    a = np.asarray(img).astype(int); rgb, al = a[:, :, :3], a[:, :, 3] > 0
+    navy = al & (rgb[:, :, 2] > rgb[:, :, 0] + 8) & (rgb[:, :, 2] > 45) & (rgb[:, :, 0] < 110) & (rgb.max(2) < 125)
+    lab, n = ndimage.label(navy)
+    if not n: return img
+    border = ndimage.binary_dilation(~al, iterations=1)
+    sizes = ndimage.sum(navy, lab, range(1, n + 1))
+    touch = ndimage.maximum(border, lab, range(1, n + 1))
+    drop = [i + 1 for i in range(n) if sizes[i] < 4500 and touch[i]]
+    out = np.asarray(img).copy(); out[np.isin(lab, drop), 3] = 0
+    return Image.fromarray(out)
+
+def extra():
+    out = {}
+    for key, src in EXTRA.items():
+        f = os.path.join(CUT2, src + ".png")
+        if not os.path.exists(f): print("нет кадра", src); continue
+        img = despeck(Image.open(f).convert("RGBA"))
+        k = .62 if key.startswith("c_") else .5
+        out[key] = img.resize((round(img.width * k), round(img.height * k)), Image.LANCZOS)
+    return out
+
+sprites = {**chars(), **props(), **monsters(), **extra()}
 # упаковка полками
 W = 2048; x = y = shelf = 0; pos = {}
 for name, img in sorted(sprites.items(), key=lambda kv: -kv[1].height):
