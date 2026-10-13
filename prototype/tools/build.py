@@ -8,6 +8,9 @@ import os
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src = open(os.path.join(HERE, "studio.src.html"), encoding="utf-8").read()
 data = json.load(open(os.path.join(HERE, "data.json"), encoding="utf-8"))
+cfg_path = os.path.join(HERE, "config.json")
+if os.path.exists(cfg_path):   # свежий конфиг (роли, цвета, кто чей хозяин) — без пересъёмки таблицы
+    data["config"] = json.load(open(cfg_path, encoding="utf-8"))
 blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
 import base64
 bg_path = os.path.join(HERE, "assets", "studio-bg2.jpg")

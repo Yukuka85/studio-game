@@ -44,11 +44,13 @@ def props():
         m = (lab[sl] == li)
         if name == "cat_curl": m[:, int(m.shape[1] * .8):] = False   # справа прилип чужой кусок
         # мягкая тень под стульями (светло-серая) — убираем
-        if name.startswith("chair"):   # тень под колёсиками — только у стульев и только внизу
+        if name.startswith("chair"):   # тень под колёсиками: всё светлое в нижней трети (колёса и крестовина тёмные)
             rgb = a[sl]
-            shadow = (rgb.min(2) > 175) & (np.ptp(rgb, axis=2) < 22)
-            shadow[: int(shadow.shape[0] * .8)] = False
+            shadow = rgb.min(2) > 120
+            shadow[: int(shadow.shape[0] * .66)] = False
             m = m & ~shadow
+            m = m & ~((rgb.min(2) > 205) & (np.ptp(rgb, axis=2) < 30))   # запертый внутри контура белый фон листа
+            m = ndimage.binary_opening(m, iterations=1)
         ys, xs = np.where(m); m = m[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
         crop = np.asarray(src)[sl][ys.min():ys.max() + 1, xs.min():xs.max() + 1]
         img = Image.fromarray(np.dstack([crop, (m * 255).astype(np.uint8)]))
@@ -68,7 +70,41 @@ def chars():
             out["c_" + f[:-4]] = img.resize((round(img.width * .62), round(img.height * .62)), Image.LANCZOS)
     return out
 
-sprites = {**chars(), **props()}
+MON_SRC = [f for f in os.listdir(ART) if f.startswith("Draw_game_objects")]
+MON_COLS = [570, 1485, 2400, 3330, 4260]
+MON_ROWS = {"ghost": (110, 745), "slime": (960, 1625), "zombie": (1790, 2620), "tangle": (2750, 3440)}
+MON_POSES = {"ghost": ["front", "side", "back", "float", "play"], "slime": ["front", "side", "back", "action", "splat"],
+             "zombie": ["front", "side", "back", "walk", "action"], "tangle": ["front", "side", "back", "roll", "action"]}
+
+def monsters():
+    """Лист монстриков: 4 строки × 5 кадров на тёмно-синей сетке с подписями."""
+    if not MON_SRC: return {}
+    src = Image.open(os.path.join(ART, MON_SRC[0])).convert("RGB")
+    a = np.asarray(src).astype(int)
+    r, g, b = a[:, :, 0], a[:, :, 1], a[:, :, 2]
+    navy = (b > r + 22) & (b > g + 10) & (a.max(2) < 125)
+    out = {}
+    for kind, (y0, y1) in MON_ROWS.items():
+        for ci, cx in enumerate(MON_COLS):
+            x0, x1 = max(400 if ci == 0 else 0, cx - 450), min(src.width, cx + 450)
+            fg = ~navy[y0:y1, x0:x1]
+            fg = ndimage.binary_opening(fg, iterations=2)
+            lab, n = ndimage.label(fg)
+            if not n: continue
+            sizes = ndimage.sum(fg, lab, range(1, n + 1)); k = int(np.argmax(sizes)) + 1
+            keep = lab == k
+            near = ndimage.binary_dilation(keep, iterations=25)
+            for j in range(1, n + 1):
+                if j != k and 80 < sizes[j - 1] < sizes[k - 1] * .3 and (near & (lab == j)).any(): keep |= lab == j
+            keep = ndimage.binary_fill_holes(ndimage.binary_closing(keep, iterations=4))
+            ys, xs = np.where(keep)
+            crop = np.asarray(src)[y0:y1, x0:x1][ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+            m = keep[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+            img = Image.fromarray(np.dstack([crop, (m * 255).astype(np.uint8)]))
+            out[f"m_{kind}_{MON_POSES[kind][ci]}"] = img.resize((round(img.width * .5), round(img.height * .5)), Image.LANCZOS)
+    return out
+
+sprites = {**chars(), **props(), **monsters()}
 # упаковка полками
 W = 2048; x = y = shelf = 0; pos = {}
 for name, img in sorted(sprites.items(), key=lambda kv: -kv[1].height):
