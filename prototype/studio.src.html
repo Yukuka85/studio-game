@@ -546,7 +546,7 @@ const SEATS = [
   { x: im(440), y: im(641), pose: "sitBack", chair: { key: "chair_back", x: im(440), y: im(690), over: true }, plate: [im(440), im(712)], glow: [[im(360), im(330)], [im(490), im(335)]], cat: [im(520), im(420)], lamp: [im(595), im(345)] },
   { x: im(318), y: im(812), pose: "sitSide", face: -1, chair: { key: "chair_side", x: im(330), y: im(835), face: -1 }, plate: [im(330), im(850)], glow: [[im(140), im(640)]], cat: [im(205), im(700)], mug: [im(250), im(575)], lamp: [im(195), im(545)] },
   { x: im(802), y: im(800), pose: "sitSide", face: 1, chair: { key: "chair_side2", x: im(790), y: im(822), face: 1 }, plate: [im(790), im(842)], glow: [[im(985), im(560)]], cat: [im(905), im(640)] },
-  { x: im(1218), y: im(800), pose: "sitSide", face: -1, chair: { key: "chair_side", x: im(1230), y: im(822), face: -1 }, plate: [im(1230), im(842)], glow: [[im(1095), im(600)]], cat: [im(1110), im(705)] },
+  { x: im(1206), y: im(800), pose: "sitSide", face: -1, chair: { key: "chair_side", x: im(1218), y: im(822), face: -1 }, plate: [im(1230), im(842)], glow: [[im(1095), im(600)]], cat: [im(1110), im(705)] },
   { x: im(830), y: im(1191), pose: "sitBack", chair: { key: "chair_back2", x: im(830), y: im(1250), over: true }, plate: [im(830), im(1262)], glow: [[im(825), im(1000)]], cat: [im(700), im(1000)], mug: [im(955), im(1015)] },
   { x: im(1175), y: im(1191), pose: "sitBack", chair: { key: "chair_back3", x: im(1175), y: im(1250), over: true }, plate: [im(1175), im(1262)], glow: [[im(1175), im(1000)]], cat: [im(1300), im(1010)], mug: [im(1260), im(1030)] },
   { x: im(1792), y: im(800), pose: "sitSide", face: -1, plate: [im(1790), im(945)], glow: [], cat: [im(1600), im(760)] },
@@ -848,6 +848,7 @@ function look(a, t) {
     if (a.pose === "sitSide" && a.t?.k === "desk") {
       if (a.microUntil > t && a.micro === "sip" && ak(p, "sipSide1")) { const ph = 1 - (a.microUntil - t) / (a.microDur || 1500); return { key: ak(p, ph < .2 || ph > .9 ? "sipSide1" : ph < .35 || ph > .75 ? "sipSide2" : "sipSide3"), face: a.face, own: true }; }
       if (loadOf(p.name, S.day) > 0) { const k = cyc(p, ["drawSide1", "drawSide2", "drawSide3", "drawSide2"], t + a.bob * 997, 260); if (k) return { key: k, face: a.face, own: true }; }
+      if (ak(p, "deskSide")) return { key: ak(p, "deskSide"), face: a.face, own: true };   // ноги под столом
     }
     if (a.pose === "sitBack" && a.t?.k === "desk" && loadOf(p.name, S.day) > 0) { const st = stateOf(p.name, S.day), k = cyc(p, ["typeBack1", "typeBack2"], t + a.bob * 997, st === "over" ? 160 : st === "flow" ? 240 : 420); if (k) return { key: k, face: 1, own: true }; }
     if (a.pose === "stand" && !sp && a.idleUntil > t && ak(p, "thinkFront1")) return { key: ak(p, "thinkFront1"), face: 1 };
