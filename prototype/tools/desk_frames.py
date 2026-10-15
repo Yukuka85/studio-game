@@ -39,7 +39,7 @@ class Rig:
     def __init__(self, slug, r):
         self.slug, self.r = slug, r
         self.kind = r["kind"]
-        self.base = load(f"{slug}_{'sitSide' if self.kind == 'side' else 'sitBack'}")
+        self.base = load(f"{slug}_{r.get('base') or {'side': 'sitSide', 'back': 'sitBack', 'bstand': 'back', 'front': 'stand'}[self.kind]}")
         self.w, self.h = self.base.size
         side = load(f"{slug}_sitSide")
         box = lambda k: side.crop(tuple(r["tex"][k])) if k in r["tex"] else None
@@ -65,7 +65,7 @@ class Rig:
             name, _, off = t[1:].partition("+")
             p = self.r["body"][name]; dx, dy = map(float, off.split(",")) if off else (0, 0)
             return p[0] + dx, p[1] + dy
-        return self.to_cut(*t)
+        return self.to_cut(*t) if "seat" in self.r else tuple(t)     # без места — точки прямо в пикселях кадра
 
     def S(self, p):
         return ((p[0] + PAD) * SS, p[1] * SS)
@@ -115,13 +115,22 @@ def elbow_for(sh, hand, l1, l2, side):
 
 def prop(rig, img, hand, kind, ang, mdir=1):
     d = ImageDraw.Draw(img); S = rig.S; hx, hy = hand
+    if kind == "phone":
+        d.rounded_rectangle([S((hx - 9, hy - 30)), S((hx + 9, hy + 2))], radius=4 * SS, fill=INK)
+        d.rounded_rectangle([S((hx - 6, hy - 27)), S((hx + 6, hy - 1))], radius=2 * SS, fill=(120, 200, 255, 255))
+        d.ellipse([S((hx - 11, hy - 8)), S((hx + 3, hy + 6))], fill=tuple(rig.r.get("skin", [240, 180, 150])) + (255,))
+        return
+    if kind == "marker":
+        d.line([S((hx - 2, hy - 30)), S((hx + 4, hy + 6))], fill=INK, width=9 * SS)
+        d.line([S((hx - 1, hy - 28)), S((hx + 3, hy + 2))], fill=(226, 64, 70, 255), width=4 * SS)
+        return
     if kind in ("stylus", "pen"):
         col = (150, 156, 176, 255) if kind == "stylus" else (60, 110, 200, 255)
         d.line([S((hx - 10, hy - 28)), S((hx + 14, hy + 16))], fill=INK, width=8 * SS)
         d.line([S((hx - 9, hy - 26)), S((hx + 11, hy + 11))], fill=col, width=3 * SS)
     if kind == "mug" and rig.mug:
         m = rig.mug.resize((rig.mug.width * SS, rig.mug.height * SS), Image.LANCZOS)
-        if rig.r["face"] < 0: m = m.transpose(Image.FLIP_LEFT_RIGHT)   # кадр потом отразят — кружка выйдет как на столе
+        if rig.r.get("face", 1) < 0: m = m.transpose(Image.FLIP_LEFT_RIGHT)   # кадр потом отразят — кружка выйдет как на столе
         cx, cy = S((hx + (rig.mug.width / 2 - 6) * mdir, hy - 4)); img.alpha_composite(m, (int(cx - m.width / 2), int(cy - m.height / 2)))
         f = (hx - 9, hy - 6, hx + 1, hy + 6) if mdir > 0 else (hx - 1, hy - 6, hx + 9, hy + 6)      # пальцы поверх края кружки
         d.ellipse([S(f[:2]), S(f[2:])], fill=tuple(rig.r.get("skin", [240, 180, 150])) + (255,))
@@ -158,7 +167,7 @@ def arm(rig, img, spec):
             d.ellipse([rig.S((b[0] - 4.5, b[1] - 4.5)), rig.S((b[0] + 4.5, b[1] + 4.5))], fill=tuple(rig.r["buttons"]) + (255,))
     hd = rig.hand.resize((rig.hand.width * SS, rig.hand.height * SS), Image.LANCZOS).rotate(-math.degrees(ang), resample=Image.BICUBIC, expand=True)
     hx, hy = rig.S(hand); img.alpha_composite(hd, (int(hx - hd.width / 2), int(hy - hd.height / 2)))
-    if spec.get("prop"): prop(rig, img, hand, spec["prop"], ang, rig.mug_dir(side))
+    if spec.get("prop"): prop(rig, img, hand, spec["prop"], ang, spec.get("mdir", rig.mug_dir(side)))
     return el
 
 
@@ -209,10 +218,19 @@ def body(rig, erase):
             for u in range(max(x0, fr[v] - 3), fr[v] + 1): lp[u, v] = INK
         d.rectangle([S((x0, y0)), S((x1, y1))], fill=(0, 0, 0, 0))
         big.alpha_composite(layer.resize((W * SS, H * SS), Image.NEAREST), (PAD * SS, 0))
-    if rig.kind == "back":
+    if rig.kind in ("back", "bstand", "front"):
+        src = rig.base.load()
         for k in erase or []:
-            d.rectangle([S(r["arms"][k][:2]), S(r["arms"][k][2:])], fill=(0, 0, 0, 0))
-    if rig.kind == "side":   # ноги под столом
+            x0, y0, x1, y1 = r["arms"][k]
+            d.rectangle([S((x0, y0)), S((x1, y1))], fill=(0, 0, 0, 0))
+            if rig.kind == "back": continue
+            # у стоящих руки висят вдоль туловища — после них у туловища нет контура: дорисовываем
+            inner = x1 + 1 if k == "L" else x0 - 1
+            for v in range(y0, y1 + 1):
+                if 0 <= inner < rig.w and src[inner, v][3] > 200:
+                    a0, a1 = (x1 - 3, x1 + 1) if k == "L" else (x0, x0 + 4)
+                    d.rectangle([S((a0, v)), S((a1, v + 1))], fill=INK)
+    if rig.kind == "side" and "desk" in r:   # ноги под столом
         m = Image.new("L", big.size, 0)
         ImageDraw.Draw(m).polygon([S(rig.to_cut(*p)) for p in r["desk"]], fill=255)
         a = big.getchannel("A"); a.paste(0, mask=m); big.putalpha(a)
@@ -230,12 +248,12 @@ def frame(rig, arms):
         img = body(rig, erase=bool(arms))
         for s in arms: arm(rig, img, s)
         return finish(rig, img)
-    img = rig.canvas()                    # спиной: руки позади головы — сначала руки, потом тело
+    img = rig.canvas()                    # спиной: руки позади головы — сначала руки, потом тело; лицом — наоборот
     for s in arms:
-        if not s.get("over"): arm(rig, img, s)
+        if not s.get("over") and rig.kind != "front": arm(rig, img, s)
     img.alpha_composite(body(rig, erase=[s.get("from") for s in arms]))
     for s in arms:
-        if s.get("over"): arm(rig, img, s)
+        if s.get("over") or rig.kind == "front": arm(rig, img, s)
     return finish(rig, img)
 
 
@@ -249,7 +267,19 @@ def main(only=None):
         for act, frames in r["acts"].items():
             for i, arms in enumerate(frames, 1):
                 frame(rig, arms).save(os.path.join(CUT, f"{slug}_d_{act}{i}.png")); n += 1
-        print(slug, n, "кадров")
+        print(slug, n, "кадров за столом")
+    # занятия там, куда человека бросили: кофе, доска, диван, просто посреди комнаты (pose_rigs.json)
+    pp = os.path.join(CUT, "pose_rigs.json")
+    if not os.path.exists(pp): return
+    for slug, sets in json.load(open(pp, encoding="utf-8")).items():
+        if only and slug not in only: continue
+        n = 0
+        for set_name, r in sets.items():
+            rig = Rig(slug, r)
+            for act, frames in r["acts"].items():
+                for i, arms in enumerate(frames, 1):
+                    frame(rig, arms).save(os.path.join(CUT, f"{slug}_x_{act}{i}.png")); n += 1
+        print(slug, n, "кадров занятий")
 
 
 if __name__ == "__main__":

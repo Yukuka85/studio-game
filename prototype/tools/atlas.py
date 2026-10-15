@@ -1,3 +1,4 @@
+import re
 """Атлас спрайтов из листов art/new style: персонажи (уже нарезаны в assets/cut) + стулья, кот, самоед, мелочи.
 
     python3 tools/atlas.py   → assets/atlas.png + assets/atlas.json
@@ -147,6 +148,12 @@ def extra():
     return out
 
 sprites = {**chars(), **props(), **monsters(), **extra()}
+# сгенерированные кадры (за столом, занятия) — с широкими пустыми полями: обрезаем, запоминаем сдвиг и полный размер
+trim = {}
+for name, img in list(sprites.items()):
+    if re.search(r"_(d|x)_|_desk$", name):
+        bb = img.getbbox()
+        if bb: trim[name] = (bb[0], bb[1], img.width, img.height); sprites[name] = img.crop(bb)
 # упаковка полками
 W = 2048; x = y = shelf = 0; pos = {}
 for name, img in sorted(sprites.items(), key=lambda kv: -kv[1].height):
@@ -154,6 +161,7 @@ for name, img in sorted(sprites.items(), key=lambda kv: -kv[1].height):
     pos[name] = [x, y, img.width, img.height]; x += img.width + 2; shelf = max(shelf, img.height)
 atlas = Image.new("RGBA", (W, y + shelf), (0, 0, 0, 0))
 for name, (px, py, w, h) in pos.items(): atlas.paste(sprites[name], (px, py))
+for name, t in trim.items(): pos[name] += list(t)     # [x, y, w, h, сдвиг x, сдвиг y, полная ширина, полная высота]
 atlas.quantize(colors=256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE).save(os.path.join(HERE, "assets", "atlas.png"), optimize=True)
 json.dump(pos, open(os.path.join(HERE, "assets", "atlas.json"), "w"))
 print(len(pos), "спрайтов, атлас", atlas.size, os.path.getsize(os.path.join(HERE, "assets", "atlas.png")) // 1024, "KB")

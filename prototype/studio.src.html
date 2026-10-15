@@ -510,21 +510,27 @@ function fkey(p, pose) {
   return null;
 }
 // размер спрайта в логических точках (1 точка = 5 px фона)
-function dims(key) { const f = AMAP[key]; if (!f) return [20, 30]; const k = scaleOf(key) / 5; return [f[2] * k, f[3] * k]; }
+function dims(key) { const f = AMAP[key]; if (!f) return [20, 30]; const k = scaleOf(key) / 5; return [(f[6] || f[2]) * k, (f[7] || f[3]) * k]; }
+// кадр в прямоугольник полного размера (у обрезанных кадров — со сдвигом)
+function drawA(c2, f, dx, dy, dw, dh) {
+  if (!f[6]) { c2.drawImage(ATLAS, f[0], f[1], f[2], f[3], dx, dy, dw, dh); return; }
+  const sx = dw / f[6], sy = dh / f[7];
+  c2.drawImage(ATLAS, f[0], f[1], f[2], f[3], dx + f[4] * sx, dy + f[5] * sy, f[2] * sx, f[3] * sy);
+}
 function blitEx(c2, key, x, y, face, tilt, sx = 1, sy = 1) {
   const f = AMAP[key]; if (!f || !atlasReady) return;
   const [w, h] = dims(key);
   c2.save(); c2.translate(x, y); c2.rotate(tilt); c2.scale((face < 0 ? -1 : 1) * sx, sy);
-  c2.drawImage(ATLAS, f[0], f[1], f[2], f[3], -w / 2, -h, w, h); c2.restore();
+  drawA(c2, f, -w / 2, -h, w, h); c2.restore();
 }
 // нарисовать спрайт: x, y — низ по центру (ноги/колёсики), face −1 — отражение; rot — поворот (лёжа)
 function blit(c2, key, x, y, face = 1, rot = 0) {
   const f = AMAP[key]; if (!f || !atlasReady) return;
   const [w, h] = dims(key);
   c2.save(); c2.translate(x, y);
-  if (rot) { c2.rotate(rot); c2.drawImage(ATLAS, f[0], f[1], f[2], f[3], -w / 2, -h / 2, w, h); c2.restore(); return; }
+  if (rot) { c2.rotate(rot); drawA(c2, f, -w / 2, -h / 2, w, h); c2.restore(); return; }
   if (face < 0) c2.scale(-1, 1);
-  c2.drawImage(ATLAS, f[0], f[1], f[2], f[3], -w / 2, -h, w, h);
+  drawA(c2, f, -w / 2, -h, w, h);
   c2.restore();
 }
 
@@ -553,9 +559,9 @@ const SEATS = [
 ];
 // Места, куда уходят: штурм у доски (стоя и на креслах-мешках), кофейный угол, диван, сундук, колесо
 const SPOTS = [
-  { id: "m1", kind: "meet", x: im(600), y: im(470), pose: "standBack" }, { id: "m2", kind: "meet", x: im(985), y: im(452), pose: "standBack" },
+  { id: "m1", kind: "meet", x: im(760), y: im(470), pose: "standBack" }, { id: "m2", kind: "meet", x: im(985), y: im(452), pose: "standBack" },
   { id: "m3", kind: "meet", x: im(815), y: im(512), pose: "sitFront" }, { id: "m4", kind: "meet", x: im(1165), y: im(488), pose: "sitFront" },
-  { id: "k1", kind: "coffee", x: im(1470), y: im(578), pose: "standBack" }, { id: "k2", kind: "coffee", x: im(1585), y: im(584), pose: "standBack" }, { id: "k3", kind: "coffee", x: im(1700), y: im(612), pose: "stand" },
+  { id: "k1", kind: "coffee", x: im(1470), y: im(520), pose: "standBack" }, { id: "k2", kind: "coffee", x: im(1585), y: im(526), pose: "standBack" }, { id: "k3", kind: "coffee", x: im(1700), y: im(612), pose: "stand" },
   { id: "so1", kind: "sofa", x: im(1792), y: im(712), pose: "sitSide", face: -1 }, { id: "so2", kind: "sofa", x: im(1792), y: im(898), pose: "sitSide", face: -1 },
   { id: "bb1", kind: "bean", x: im(815), y: im(512), pose: "sitFront" }, { id: "bb2", kind: "bean", x: im(1165), y: im(488), pose: "sitFront" },
   { id: "ch", kind: "bean", x: im(1545), y: im(1352), pose: "sitFront" },
@@ -628,7 +634,7 @@ function place(a, d) { a.x = d.x; a.y = d.y; a.pose = a.t?.lie ? "lie" : d.pose;
 function updateTargets(instant) {
   const taken = new Set();
   for (const a of actors) {
-    if (a.carried) continue;
+    if (a.carried || a.forced) continue;
     const w = wantAt(a.p.name, S.day, S.hour);
     let t = w;
     if (w.k === "spot") {
@@ -864,9 +870,86 @@ function deskLook(a, t) {
   // со спины печать почти не видна (руки за головой) — оставляем живое покачивание головы
   return { key: `c_${s}_d_${name}${step}`, face, own: !(name === "type" && a.pose === "sitBack") };
 }
+// Куда бросили «за шкирку» — тем и занимается 10–15 с, потом идёт обратно.
+// Программа — шаги: поза + кадры c_<slug>_x_<занятие><n> (или обычная поза), длительность, эффекты.
+const spotById = id => SPOTS.find(s => s.id === id);
+const PROGRAMS = {
+  coffee: { say: ["о, кофе!", "раз уж я тут — эспрессо", "кофе сам себя не сварит"], steps: [
+    { pose: "standBack", act: "press", frames: [1, 2], ms: 380, dur: 1500 },
+    { pose: "standBack", dur: 1900, fx: "steam" },
+    { pose: "standBack", act: "take", frames: [1], dur: 800 },
+    { pose: "stand", act: "sip", frames: [1, 2, 2, 1], ms: 800, dur: 4800 }] },
+  board: { say: ["о, запишу идею", "так, мозговой штурм!", "щас нарисую схему"], steps: [
+    { pose: "standBack", act: "write", frames: [1, 2, 3, 2], ms: 240, dur: 4200 },
+    { pose: "standBack", dur: 1300, line: ["хм…", "а если так?", "вау-эффект!"] },
+    { pose: "standBack", act: "write", frames: [3, 1, 2], ms: 280, dur: 3000 }] },
+  sofa: { say: ["ну раз уж диван…", "пять минуточек", "о, мягко"], steps: [
+    { pose: "sitSide", act: "phone", frames: [1, 2], ms: 900, dur: 6500 },
+    { pose: "lie", dur: 6000, fx: "zzz" }] },
+  wheel: { say: ["ладно, побегаю!", "кардио так кардио", "дедлайн догоняет!"], steps: [{ pose: "run", dur: 8000, fx: "sweat" }], after: ["уф…", "ноги…", "зато бодрый"] },
+  bean: { say: ["посижу тут с ноутом", "о, мешок!"], steps: [{ pose: "sitFront", item: "laptop", dur: 9000 }] },
+  floor: { say: ["и что мне тут делать?", "эм… привет?", "куда это я?"], steps: [
+    { pose: "stand", act: "scratch", frames: [1, 2], ms: 220, dur: 1500 },
+    { pose: "stand", dur: 700 },
+    { pose: "stand", act: "wave", frames: [1, 2], ms: 260, dur: 1800 },
+    { pose: "stand", act: "scratch", frames: [2, 1], ms: 240, dur: 1000 }] },
+};
+const free = (sp, a) => !actors.some(o => o !== a && o.mode === "placed" && Math.hypot(o.x - sp.x, o.y - sp.y) < 4);
+function dropZone(x, y, a) {
+  const pick = ids => ids.map(spotById).find(sp => free(sp, a)) || spotById(ids[0]);
+  const bean = ["bb1", "bb2", "ch"].map(spotById).find(sp => Math.hypot(sp.x - x, sp.y - y) < im(110));
+  if (Math.hypot(x - im(1830), y - im(1300)) < im(190)) return { kind: "wheel", spot: spotById("wh") };
+  if (x > im(1690) && y > im(600) && y < im(980)) return { kind: "sofa", spot: pick(["so1", "so2"]) };
+  if (x > im(1380) && x < im(1770) && y < im(720)) return { kind: "coffee", spot: pick(["k1", "k2"]) };
+  if (bean) return { kind: "bean", spot: bean };
+  if (y < im(600) && x > im(640) && x < im(1380)) return { kind: "board", spot: pick(Math.abs(x - im(760)) < Math.abs(x - im(985)) ? ["m1", "m2"] : ["m2", "m1"]) };
+  const row = Object.values(ROWS).reduce((b, r) => Math.abs(r - y) < Math.abs(b - y) ? r : b, ROWS.mid);
+  return { kind: "floor", spot: { x: clamp(x, 20, 380), y: row, pose: "stand" } };
+}
+function startProgram(a, x, y, feetY = y) {
+  const z = dropZone(x, y, a), prog = PROGRAMS[z.kind];
+  const sp = { ...z.spot, pose: prog.steps[0].pose, face: z.spot.face || 1 };
+  a.forced = { kind: z.kind, prog, t0: 0, total: prog.steps.reduce((s2, st) => s2 + st.dur, 0) };
+  a.t = { k: "spot", spot: sp, act: { coffee: "варит кофе", board: "пишет на доске", sofa: "валяется на диване", wheel: "бежит в колесе", bean: "с ноутом на мешке", floor: "стоит и не понимает" }[z.kind], item: prog.steps[0].item };
+  if (z.kind === "floor" && Math.abs(sp.y - feetY) < 3) { a.path = []; place(a, sp); } else { a.mode = "walking"; a.path = route(x, feetY, sp.x, sp.y); }
+  setTimeout(() => say(a, prog.say[Math.floor(Math.random() * prog.say.length)], 1500), 350);
+}
+function programStep(a, t) {
+  const f = a.forced; if (!f.t0) f.t0 = t;
+  let e = t - f.t0;
+  for (const st of f.prog.steps) { if (e < st.dur) return { st, e }; e -= st.dur; }
+  return null;
+}
+function stepPrograms(t) {
+  for (const a of actors) {
+    const f = a.forced; if (!f || a.carried || a.mode !== "placed") continue;
+    const cur = programStep(a, t);
+    if (!cur) {   // закончил — к делам
+      a.forced = null; a.t = null; updateTargets(false);
+      const after = f.prog.after || ["ладно, за работу", "всё, пошёл", "ну, хватит отдыхать"];
+      say(a, after[Math.floor(Math.random() * after.length)], 1400); continue;
+    }
+    const { st } = cur;
+    if (a.pose !== st.pose) { a.pose = st.pose; if (st.pose === "stand" || st.pose === "standBack") a.face = 1; }
+    if (a.t) a.t.item = st.item;
+    if (st.line && !cur.said && cur.e < 50) say(a, st.line[Math.floor(Math.random() * st.line.length)], 1200);
+    if (REDUCED) continue;
+    const [w, h] = dims(fkey(a.p, "stand"));
+    if (st.fx === "steam" && Math.random() < .25) parts.push({ x: a.x + (a.t.spot.x === spotById("k1").x ? 2 : 6), y: a.y - h * .78, vx: (Math.random() - .5) * 4, vy: -10 - Math.random() * 6, life: 1.4, c: "#F4F1EA", puff: true });
+    if (st.fx === "zzz" && Math.random() < .02) parts.push({ x: a.x - 6, y: a.y - 12, vx: -3, vy: -7, life: 2, c: "#DDE6FF", txt: "z" });
+    if (st.fx === "sweat" && Math.random() < .06) parts.push({ x: a.x + (Math.random() - .5) * 6, y: a.y - h * .8, vx: (Math.random() - .5) * 18, vy: -14, grav: 60, life: .8, c: "#9FD8FF", s: 1.4, floor: a.y });
+  }
+}
+function programLook(a, t) {
+  const cur = programStep(a, t); if (!cur || !cur.st.act) return null;
+  const { st, e } = cur, fr = st.frames[Math.floor(e / (st.ms || st.dur)) % st.frames.length];
+  const k = `c_${SLUG(a.p)}_x_${st.act}${fr}`;
+  return AMAP[k] ? { key: k, face: st.pose === "sitSide" ? a.face : 1, own: true } : null;
+}
 // какой кадр сейчас у человека
 function look(a, t) {
   const p = a.p;
+  if (a.forced && a.mode === "placed") { const L = programLook(a, t); if (L) return L; }
   if (a.joyUntil > t) { const k = cyc(p, ["joy1", "joy2"], t, 180); if (k) return { key: k, face: 1 }; }
   if (a.mode === "walking" && a.dir === "side") { const k = cyc(p, ["walkSide1", "walkSide2", "walkSide3", "walkSide2"], t, 140); if (k) return { key: k, face: a.face }; }
   if (a.mode === "placed") {
@@ -877,7 +960,6 @@ function look(a, t) {
     if (sp === "coffee" && a.pose === "standBack" && ak(p, "coffeeBack")) return { key: ak(p, "coffeeBack"), face: 1 };
     if (sp === "coffee" && a.pose === "standSide" && ak(p, "coffeeSide")) return { key: ak(p, "coffeeSide"), face: a.face };
     if (a.pose === "sitFront" && a.t?.item === "laptop" && ak(p, "laptopFront")) return { key: ak(p, "laptopFront"), face: 1, laptopDrawn: true };
-    if (a.pose === "lie" && ak(p, "lieSide")) return { key: ak(p, "lieSide"), face: 1 };
     if (a.t?.k === "desk" && DACTS[SLUG(p)]) return deskLook(a, t);
     if (a.pose === "stand" && !sp && a.idleUntil > t && ak(p, "thinkFront1")) return { key: ak(p, "thinkFront1"), face: 1 };
   }
@@ -889,7 +971,7 @@ function look(a, t) {
     return { key: fkey(a.p, step ? "walk" : "stand"), face: 1 };
   }
   if (a.pose === "run") return { key: fkey(a.p, Math.floor(t / 110) % 2 ? "walkSide" : "side"), face: 1 };
-  if (a.pose === "lie") return { key: fkey(a.p, "lie"), face: 1, rot: -Math.PI / 2 };
+  if (a.pose === "lie") return { key: fkey(a.p, "lie"), face: 1, rot: Math.PI / 2 };
   if (turned && a.pose !== "sitBack" && a.pose !== "standBack") return { key: fkey(a.p, a.pose.startsWith("sit") ? "sitBack" : "back"), face: 1 };
   const map = { sitBack: "sitBack", sitSide: "sitSide", sitFront: "sitFront", stand: "stand", standBack: "back", standSide: "side" };
   return { key: fkey(a.p, map[a.pose] || "stand"), face: a.face || 1 };
@@ -949,6 +1031,7 @@ let tint = 0;
 function glow(c2, x, y, r, c, a) { const gr = c2.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, c); gr.addColorStop(1, "rgba(0,0,0,0)"); c2.globalAlpha = a; c2.fillStyle = gr; c2.fillRect(x - r, y - r, r * 2, r * 2); c2.globalAlpha = 1; }
 
 function render(t) {
+  if (!cv.width || !cv.height || !sprC.width || !sprC.height) return;   // вкладка свёрнута / сцена ещё без размера
   const dpr = window.devicePixelRatio || 1, { S: sc, ox, oy, cw, ch } = layout;
   for (const c of [cv, cv2, sprC]) if (c.width !== Math.round(cw * dpr) || c.height !== Math.round(ch * dpr)) { c.width = Math.round(cw * dpr); c.height = Math.round(ch * dpr); }
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#15173A"; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -1003,7 +1086,15 @@ function render(t) {
     if (s?.cup && !(atSeat(a) && a.da?.name === "sip")) L.push({ z: s.cup.y, d: () => blit(sx2, s.cup.key, s.cup.x, s.cup.y) });
   });
   const runner = actors.find(a => a.mode === "placed" && a.pose === "run");
-  L.push({ z: im(1460), d: () => { if (WHEEL.complete && WHEEL.naturalWidth) { const k = 1 / 5; sx2.drawImage(WHEEL, im(1660), im(1080), WHEEL.naturalWidth * k, WHEEL.naturalHeight * k); } } });
+  L.push({ z: im(1460), d: () => {
+    if (WHEEL.complete && WHEEL.naturalWidth) { const k = 1 / 5; sx2.drawImage(WHEEL, im(1660), im(1080), WHEEL.naturalWidth * k, WHEEL.naturalHeight * k); }
+    if (runner) {   // спицы бегут по ободу — видно, что колесо крутится
+      const cx = im(1830), cy = im(1290), a0 = -t / 260;
+      sx2.save(); sx2.strokeStyle = "rgba(40,30,48,.7)"; sx2.lineWidth = 1.5;
+      for (let i = 0; i < 14; i++) { const an = a0 + i * Math.PI * 2 / 14; sx2.beginPath(); sx2.moveTo(cx + Math.cos(an) * im(140), cy + Math.sin(an) * im(140)); sx2.lineTo(cx + Math.cos(an) * im(162), cy + Math.sin(an) * im(162)); sx2.stroke(); }
+      sx2.restore();
+    }
+  } });
   if (runner) L.find(o => o.z === im(1460)).z = runner.y + .5;
   L.push({ z: cat.y, d: () => blit(sx2, cat.sleep ? "cat_curl" : cat.sit ? "cat_sit" : "cat_walk", cat.x, cat.y, cat.sit ? 1 : cat.face) });
   if (!dog.hidden) L.push({ z: dog.y, d: () => blit(sx2, dog.moving ? "dog_walk" : { sleep: "dog_sleep", bow: "dog_bow", sit: "dog_sit", visit: "dog_stand", lie: "dog_lie2" }[dog.state] || "dog_lie2", dog.x, dog.y, dog.face) });
@@ -1359,6 +1450,9 @@ scene.addEventListener("pointerup", e => {
     a.x = px; a.y = py; a.mode = "walking"; a.face = 1;
     for (let k = 0; k < 8; k++) parts.push({ x: px + (Math.random() - .5) * 10, y: py, vx: (Math.random() - .5) * 30, vy: -8 - Math.random() * 8, life: .8, c: "#C9B79C", puff: true });
     snd.thud();
+    // зона — по середине висящего тела (где его видно), а встаёт — ногами вниз
+    if (!el && a.t?.k !== "home") { a.forced = null; const [, cy] = toScene(e.clientX, e.clientY); startProgram(a, px, clamp(cy + gh * .55, 0, 299), py); return; }
+    a.forced = null;
     const back = destOf(a, a.t || { k: "desk" });
     if (a.t?.k === "home") a.path = route(px, py, EXIT[0], EXIT[1]); else a.path = route(px, py, back.x, back.y);
     setTimeout(() => say(a, ["ну и зачем?", "пойду обратно", "у меня дедлайн вообще-то", "ладно, размялся"][Math.floor(Math.random() * 4)], 1500), 350);
@@ -1742,7 +1836,7 @@ addEventListener("keydown", e => {
 let last = performance.now();
 function frame(t) {
   const dt = Math.min(.05, (t - last) / 1000); last = t;
-  stepActors(dt);
+  stepActors(dt); stepPrograms(t);
   // зевота и спонтанные пузыри
   if (!REDUCED && Math.random() < dt * .08) {
     const a = actors[Math.floor(Math.random() * actors.length)];
@@ -1751,7 +1845,7 @@ function frame(t) {
     else if (a.mode === "placed" && a.t?.spot?.kind === "meet") say(a, ["а если…", "идея!", "нет, не то", "вау-эффект?", "запиши на доску"][Math.floor(Math.random() * 4)], 1400);
     else if (a.mode === "placed" && a.t?.k === "desk" && loadOf(a.p.name, S.day) === 0 && Math.random() < .5) { a.spinUntil = t + 1200; }
   }
-  render(t); placePlates();
+  try { render(t); placePlates(); } catch (e) { console.error(e); }   // ошибка кадра не должна останавливать цикл
   for (let i = bubbles.length - 1; i >= 0; i--) { const b = bubbles[i]; if (t > b.until) { b.el.remove(); bubbles.splice(i, 1); } else placeBubble(b); }
   requestAnimationFrame(frame);
 }
