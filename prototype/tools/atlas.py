@@ -52,6 +52,22 @@ def props():
             m = m & ~shadow
             m = m & ~((rgb.min(2) > 205) & (np.ptp(rgb, axis=2) < 30))   # запертый внутри контура белый фон листа
             m = ndimage.binary_opening(m, iterations=1)
+        if name.startswith(("cat", "dog")):
+            # белый лист между лап и серо-бежевая тень на «полу»: убираем всё фоновое, что связано с краем,
+            # мех не трогаем — он кремовый и с розовой тенью, а лист чисто белый
+            rgb = a[sl]; H0 = rgb.shape[0]; ptp = np.ptp(rgb, axis=2); mn = rgb.min(2)
+            bgl = (mn > 244) & (ptp < 10)
+            low = np.zeros_like(bgl); low[int(H0 * .72):] = True
+            bgl |= low & (ptp < 30) & (mn > 172)
+            bgl &= ~(rgb.max(2) < 120)
+            cand = bgl | ~m
+            labb, _ = ndimage.label(cand)
+            outside = set(np.unique(labb[~m])) - {0}
+            drop = np.isin(labb, list(outside)) & m
+            m = m & ~ndimage.binary_dilation(drop, iterations=1)
+            m = ndimage.binary_opening(m, iterations=1)
+            lab2, n2 = ndimage.label(m)
+            if n2 > 1: m = lab2 == (np.argmax(ndimage.sum(m, lab2, range(1, n2 + 1))) + 1)
         ys, xs = np.where(m); m = m[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
         crop = np.asarray(src)[sl][ys.min():ys.max() + 1, xs.min():xs.max() + 1]
         img = Image.fromarray(np.dstack([crop, (m * 255).astype(np.uint8)]))

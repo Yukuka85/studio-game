@@ -11,6 +11,9 @@ data = json.load(open(os.path.join(HERE, "data.json"), encoding="utf-8"))
 cfg_path = os.path.join(HERE, "config.json")
 if os.path.exists(cfg_path):   # свежий конфиг (роли, цвета, кто чей хозяин) — без пересъёмки таблицы
     data["config"] = json.load(open(cfg_path, encoding="utf-8"))
+mt_path = os.path.join(HERE, "meetings.json")
+if os.path.exists(mt_path):   # встречи по датам {"2026-10-16": [{"t": "12:00", "dur": 60, "title": "…"}]} — не в git
+    data["meetings"] = json.load(open(mt_path, encoding="utf-8"))
 blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
 import base64
 bg_path = os.path.join(HERE, "assets", "studio-bg2.jpg")

@@ -52,7 +52,7 @@ select.pbtn { appearance: none; padding-right: 22px; background-image: linear-gr
 
 /* ---------- полоса доски на телефоне ---------- */
 .strip { position: absolute; z-index: 19; top: 92px; left: 16px; right: 16px; display: none; overflow-x: auto; gap: 8px; padding-bottom: 4px; touch-action: pan-x; scrollbar-width: thin; }
-.compact .strip { display: flex; }
+.compact .strip { display: none; }
 
 /* ---------- сцена ---------- */
 .scene { position: absolute; inset: 0; overflow: hidden; background: var(--bg); touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -64,7 +64,20 @@ select.pbtn { appearance: none; padding-right: 22px; background-image: linear-gr
 .bhead b { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bopen { border: 0; background: #FFC94A; color: #2A2200; font: inherit; font-size: calc(var(--u) * 2.1px); padding: calc(var(--u) * .5px) calc(var(--u) * 1.2px); cursor: pointer; box-shadow: calc(var(--u) * .4px) calc(var(--u) * .4px) 0 rgba(30,20,60,.35); white-space: nowrap; }
 .bcols { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: minmax(0, 1fr); gap: calc(var(--u) * 1.2px); }
-.compact .board { display: none; }
+.ld { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.15fr repeat(var(--nd), 1fr); grid-auto-rows: 1fr; gap: calc(var(--u) * .45px); font-size: clamp(8px, calc(var(--u) * 2.5px), 13px); color: #2A2340; }
+.ld .h { font-family: var(--f-display); font-weight: 700; text-transform: uppercase; font-size: clamp(7px, calc(var(--u) * 2px), 11px); color: #6A6288; align-self: end; text-align: center; white-space: nowrap; }
+.ld .h.today { color: #C2185B; }
+.ld .nm { display: flex; align-items: center; gap: calc(var(--u) * .6px); font-weight: 700; white-space: nowrap; overflow: hidden; }
+.ld .nm i { flex: 0 0 auto; width: calc(var(--u) * 1.4px); height: calc(var(--u) * 1.4px); border-radius: 50%; background: var(--fc); }
+.ld .c { position: relative; background: #EAE5F3; border-radius: 2px; overflow: hidden; cursor: pointer; display: flex; align-items: stretch; }
+.ld .c.today { box-shadow: inset 0 0 0 calc(var(--u) * .35px) #C2185B; }
+.ld .c .bar { display: flex; width: 100%; }
+.ld .c .bar b { flex: 0 0 auto; height: 100%; background: var(--pc); border-right: 1px solid rgba(255,255,255,.55); }
+.ld .c .hrs { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #2A2340; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }
+.ld .c.over .hrs { color: #B00020; }
+.ld .c.vac { background: repeating-linear-gradient(135deg, #DCEFF6 0 4px, #EEF7FA 4px 8px); }
+.ld .c.vac .hrs { font-weight: 600; color: #3A7790; font-size: .85em; }
+.ld .c.off { background: transparent; box-shadow: none; }
 .col { display: flex; flex-direction: column; gap: calc(var(--u) * 1px); min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: none; }
 .col.many .card .nm { -webkit-line-clamp: 1; }
 .col.many .card .meta { margin-top: 0; }
@@ -532,7 +545,10 @@ const ATLASES = [ATLAS, ...JSON.parse(document.getElementById("atlaspages").text
 const AMAP = JSON.parse(document.getElementById("atlasmap").textContent);
 const WHEEL = new Image(); WHEEL.src = document.getElementById("wheelsrc").textContent.trim();
 const SLUG = p => (CFG.sprites || {})[p.name] || "free";
-const scaleOf = key => key.startsWith("c_") ? .85 : key.startsWith("chair") ? .56 : key.startsWith("cat") ? .75 : key.startsWith("dog") ? .8 : key.startsWith("m_") ? .72 : .5;
+// монстры: свой масштаб на вид, чтобы рядом с людьми были соразмерны (зомби — в рост человека)
+const MON_K = { ghost: .95, gghost: .95, cube: .85, tangle: .85, zombie: 1.08, zombie_dead: 1.2 };
+const monScale = key => { const n = key.slice(2); return MON_K[n] || MON_K[n.split("_")[0]] || .72; };
+const scaleOf = key => key.startsWith("c_") ? .85 : key.startsWith("chair") ? .56 : key.startsWith("cat") ? .75 : key.startsWith("dog") ? .8 : key.startsWith("m_") ? monScale(key) : .5;
 function fkey(p, pose) {
   const s = SLUG(p);
   for (const k of [`c_${s}_${pose}`, ...(pose === "sitFront" ? [`c_${s}_sitSide`] : []), `c_${s}_stand`]) if (AMAP[k]) return k;
@@ -800,26 +816,27 @@ function stepMonster(dt, now) {
     if (mon.x < -30) endMonster();
   }
 }
+// У каждого монстра — кадры только из одного листа (новые мелкие), чтобы он не рос и не сжимался от кадра к кадру
 function monKey(t) {
-  const step = Math.floor(t / 300) % 2, has = k => AMAP[k] ? k : null;
+  const step = Math.floor(t / 300) % 2;
   if (mon.kind === "ghost") {
     if (mon.green) return mon.phase === "steal" || mon.phase === "nap" ? "m_gghost_idleF" : mon.dir === "up" ? "m_gghost_idleB" : mon.dir === "down" ? "m_gghost_idleF" : "m_gghost_idleS";
-    if (mon.phase === "nap") return has("m_ghost_sleepy") || "m_ghost_front";
-    if (mon.phase === "steal") return "m_ghost_play";
-    if (mon.dir === "up") return has("m_ghost_walkB") || "m_ghost_back";
-    if (mon.dir === "down") return (step ? has("m_ghost_walkF") : has("m_ghost_walkF2")) || "m_ghost_front";
-    return (step ? has("m_ghost_walkS") : has("m_ghost_walkS2")) || "m_ghost_float";
+    if (mon.phase === "nap") return "m_ghost_sleepy";
+    if (mon.phase === "steal") return step ? "m_ghost_idleF" : "m_ghost_sad";
+    if (mon.dir === "up") return "m_ghost_walkB";
+    if (mon.dir === "down") return step ? "m_ghost_walkF" : "m_ghost_walkF2";
+    return step ? "m_ghost_walkS" : "m_ghost_walkS2";
   }
   if (mon.kind === "slime") {
-    if (mon.phase === "dead") return has("m_cube_puddle") || "m_slime_splat";
-    if (mon.phase === "splat") return "m_slime_splat";
-    if (mon.phase === "melt") { const k = (performance.now() - mon.t0) / 1000 - mon.meltAt; return has(k < .6 ? "m_cube_melt1" : k < 1.2 ? "m_cube_melt2" : k < 1.8 ? "m_cube_melt3" : "m_cube_puddle") || "m_slime_front"; }
-    if (mon.phase === "crawl") return (step ? has("m_cube_walkS") : has("m_cube_idleS")) || "m_slime_side";
-    return has("m_cube_idleF") || "m_slime_front";
+    if (mon.phase === "dead") return "m_cube_puddle";
+    if (mon.phase === "splat") return "m_cube_melt1";
+    if (mon.phase === "melt") { const k = (performance.now() - mon.t0) / 1000 - mon.meltAt; return k < .6 ? "m_cube_melt1" : k < 1.2 ? "m_cube_melt2" : k < 1.8 ? "m_cube_melt3" : "m_cube_puddle"; }
+    if (mon.phase === "crawl") return step ? "m_cube_walkS" : "m_cube_idleS";
+    return "m_cube_idleF";
   }
-  if (mon.kind === "zombie") return mon.phase === "dead" ? (has("m_zombie_dead") || "m_zombie_front") : ["m_zombie_walk", "m_zombie_walkS2", "m_zombie_side", "m_zombie_walkS3"].map(has).filter(Boolean)[Math.floor(t / 260) % 4] || "m_zombie_walk";
-  if (mon.phase === "dead") return has("m_tangle_dead") || "m_tangle_roll";
-  return ["m_tangle_roll", "m_tangle_r1", "m_tangle_r2", "m_tangle_r3", "m_tangle_r4"].map(has).filter(Boolean)[Math.floor(t / 120) % 5] || "m_tangle_roll";
+  if (mon.kind === "zombie") return mon.phase === "dead" ? "m_zombie_dead" : Math.floor(t / 280) % 2 ? "m_zombie_walkS3" : "m_zombie_walkS2";
+  if (mon.phase === "dead") return "m_tangle_dead";
+  return ["m_tangle_r1", "m_tangle_r2", "m_tangle_r3", "m_tangle_r4"][Math.floor(t / 120) % 4];
 }
 function drawMonster(c2, t) {
   const key = monKey(t), f = AMAP[key]; if (!f) return;
@@ -1129,6 +1146,11 @@ function look(a, t) {
     if (sp === "coffee" && a.pose === "standBack" && ak(p, "coffeeBack")) return { key: ak(p, "coffeeBack"), face: 1 };
     if (sp === "coffee" && a.pose === "standSide" && ak(p, "coffeeSide")) return { key: ak(p, "coffeeSide"), face: a.face };
     if (a.pose === "sitFront" && a.t?.item === "laptop" && ak(p, "laptopFront")) return { key: ak(p, "laptopFront"), face: 1, laptopDrawn: true };
+    // ноутбук на коленях сидя боком (на мешке без кадра «лицом» и на диване) — ноут в кадре, руки на клавиатуре
+    if (a.t?.item === "laptop" && a.t?.k !== "desk" && (a.pose === "sitSide" || (a.pose === "sitFront" && !AMAP[`c_${SLUG(p)}_sitFront`])) && AMAP[`c_${SLUG(p)}_x_laptop1`]) {
+      const n = [1, 2, 1, 3][Math.floor((t + a.bob * 331) / 220) % 4];
+      return { key: `c_${SLUG(p)}_x_laptop${n}`, face: a.pose === "sitSide" ? a.face : 1, own: true, laptopDrawn: true };
+    }
     if (a.t?.k === "desk" && DACTS[SLUG(p)]) return deskLook(a, t);
     if (a.pose === "stand" && !sp && a.idleUntil > t && ak(p, "thinkFront1")) return { key: ak(p, "thinkFront1"), face: 1 };
   }
@@ -1168,7 +1190,7 @@ function drawActor(c2, a, t) {
   const item = a.t?.item ?? (a.t?.spot ? (a.t.spot.kind === "coffee" ? "coffee" : ["meet", "wheel"].includes(a.t.spot.kind) ? null : "laptop") : null);
   if (a.mode === "placed" && item === "coffee" && a.pose === "stand") blit(c2, "coffee", x + 5, y - 13);
   if (a.mode === "placed" && item === "laptop" && a.pose === "sitFront" && !L.laptopDrawn) blit(c2, "laptop", x, y - 4);
-  if (a.mode === "placed" && item === "laptop" && a.pose === "sitSide" && !atDesk) blit(c2, "laptop", x + 4 * (a.face || 1), y - 7, a.face);
+  if (a.mode === "placed" && item === "laptop" && a.pose === "sitSide" && !atDesk && !L.laptopDrawn) blit(c2, "laptop", x + 4 * (a.face || 1), y - 7, a.face);
   if (a.mode === "placed" && atDesk && st === "over" && Math.random() < .05 && !REDUCED) parts.push({ x: a.x + (Math.random() - .5) * 6, y: a.y - dims(L.key)[1], vx: (Math.random() - .5) * 5, vy: -9, life: 1.6, c: "#D8DAEA", puff: true });
 }
 const LETTERS = "абвгдежзиклмнопрстуя!?…".split("");
@@ -1233,13 +1255,8 @@ function render(t) {
   ctx.lineWidth = .6; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.sin(mm) * 6, cy - Math.cos(mm) * 6); ctx.stroke();
   ctx.save(); ctx.beginPath(); ctx.rect(im(283), im(62), im(222), im(130)); ctx.clip();
   ctx.fillStyle = "#16304F"; ctx.fillRect(im(283), im(62), im(222), im(130));
-  const today = work.filter(p => dlText(p).diff === 0).map(pname), tomorrow = work.filter(p => dlText(p).diff === 1).map(pname);
-  const ticker = (today.length ? "СДАЧА СЕГОДНЯ: " + today.join(" · ") : "СЕГОДНЯ СДАЧ НЕТ") + (tomorrow.length ? "   ЗАВТРА: " + tomorrow.join(" · ") : "") + "   ";
-  ctx.textAlign = "left"; ctx.textBaseline = "top";
-  ctx.font = `700 7px "Golos Text", sans-serif`; ctx.fillStyle = "#FFE38A";
-  const tw = ctx.measureText(ticker).width, off2 = (t / 45) % (tw + 44);
-  ctx.fillText(ticker, im(505) - off2, im(110)); ctx.fillText(ticker, im(505) - off2 + tw + 44, im(110));
-  ctx.fillStyle = "#7FE3FF"; ctx.font = `700 4px "Golos Text", sans-serif`; ctx.fillText("DPG TV", im(298), im(72));
+  drawTV(t);
+
   ctx.restore();
   ctx.fillStyle = "#2B2B3B"; ctx.fillRect(im(1855), im(820), 9, 8);
   ctx.fillStyle = S.music ? `hsl(${270 + Math.sin(t / 300) * 15} 90% 65%)` : "#5A5A7A"; ctx.fillRect(im(1855), im(820), 9, 1.4);
@@ -1267,8 +1284,11 @@ function render(t) {
     }
   } });
   if (runner) L.find(o => o.z === im(1460)).z = runner.y + .5;
-  L.push({ z: cat.y, d: () => blit(sx2, cat.sleep ? "cat_curl" : cat.sit ? "cat_sit" : "cat_walk", cat.x, cat.y, cat.sit ? 1 : cat.face) });
-  if (!dog.hidden) L.push({ z: dog.y, d: () => blit(sx2, dog.moving ? "dog_walk" : { sleep: "dog_sleep", bow: "dog_bow", sit: "dog_sit", visit: "dog_stand", lie: "dog_lie2" }[dog.state] || "dog_lie2", dog.x, dog.y, dog.face) });
+  // в листе кот и собака смотрят в разные стороны: NOSE — куда смотрит нос в исходном кадре
+  const NOSE = { cat_walk: -1, cat_curl: -1, dog_walk: 1, dog_stand: -1, dog_bow: -1, dog_lie: -1, dog_lie2: -1, dog_sleep: 1 };
+  const pet = (key, x, y, face) => blit(sx2, key, x, y, NOSE[key] ? face * NOSE[key] : 1);
+  L.push({ z: cat.y, d: () => pet(cat.sleep ? "cat_curl" : cat.sit ? "cat_sit" : "cat_walk", cat.x, cat.y, cat.face) });
+  if (!dog.hidden) L.push({ z: dog.y, d: () => pet(dog.moving ? "dog_walk" : { sleep: "dog_sleep", bow: "dog_bow", sit: "dog_sit", visit: "dog_stand", lie: "dog_lie2" }[dog.state] || "dog_lie2", dog.x, dog.y, dog.face) });
   if (mon.kind) L.push({ z: mon.kind === "ghost" ? 1e6 : mon.y, d: () => drawMonster(sx2, t) });
   L.sort((p, q) => p.z - q.z).forEach(o => o.d());
   if (tint > 0) { sx2.save(); sx2.setTransform(1, 0, 0, 1, 0, 0); sx2.globalCompositeOperation = "source-atop"; sx2.fillStyle = `rgba(14,16,56,${tint})`; sx2.fillRect(0, 0, sprC.width, sprC.height); sx2.restore(); }
@@ -1343,13 +1363,60 @@ function cardHTML(p) {
     <div class="nm">${esc(pname(p))}</div>
     <div class="meta"><span class="dl">${esc(dl.t)}</span><span class="faces">${faces}</span></div></div>`;
 }
+// Телевизор: встречи выбранного дня (data.meetings по дате + еженедельные из конфига), ближайшая — красным
+const isoOf = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const hm = s2 => { const [h, m] = s2.split(":").map(Number); return h + (m || 0) / 60; };
+function meetingsOf(d) {
+  const day = DAYS[d], list = [...((DATA.meetings || {})[isoOf(day)] || [])];
+  (CFG.meetings_weekly || []).forEach(m => { if (m.wd === day.getDay() && !list.some(x => x.t === m.t)) list.push(m); });
+  return list.map(m => ({ ...m, h: hm(m.t), end: hm(m.t) + (m.dur || 60) / 60 })).sort((x, y) => x.h - y.h);
+}
+function drawTV(t) {
+  const x0 = im(283), y0 = im(62), w = im(222), hgt = im(130);
+  ctx.fillStyle = "#16304F"; ctx.fillRect(x0, y0, w, hgt);
+  ctx.textBaseline = "top"; ctx.textAlign = "left";
+  ctx.fillStyle = "#7FE3FF"; ctx.font = `700 3.4px "Golos Text", sans-serif`;
+  ctx.fillText(`ВСТРЕЧИ · ${WD[DAYS[S.day].getDay()]} ${dd(DAYS[S.day])}`, x0 + 2.4, y0 + 2);
+  const ms = meetingsOf(S.day), now = S.hour;
+  if (!ms.length) { ctx.fillStyle = "#9FB3CC"; ctx.font = `600 3.6px "Golos Text", sans-serif`; ctx.fillText("встреч нет", x0 + 2.4, y0 + 9); return; }
+  const next = ms.findIndex(m => m.end > now), first = clamp((next < 0 ? ms.length : next) - 1, 0, Math.max(0, ms.length - 4));
+  ms.slice(first, first + 4).forEach((m, k) => {
+    const i = first + k, y = y0 + 7.6 + k * 4.6, past = m.end <= now, hot = i === next;
+    if (hot) { ctx.fillStyle = Math.floor(t / 600) % 2 && m.h - now < .25 ? "#FF4D5E" : "#D7263D"; ctx.fillRect(x0 + 1.2, y - .5, w - 2.4, 4.3); }
+    ctx.globalAlpha = past ? .45 : 1;
+    ctx.fillStyle = hot ? "#FFFFFF" : "#FFE38A"; ctx.font = `800 3.4px "Golos Text", sans-serif`; ctx.fillText(m.t, x0 + 2.4, y);
+    ctx.fillStyle = hot ? "#FFFFFF" : "#E8F1FF"; ctx.font = `600 3.4px "Golos Text", sans-serif`;
+    let title = m.title || "встреча"; const maxW = w - 16;
+    while (ctx.measureText(title).width > maxW && title.length > 3) title = title.slice(0, -2) + "…";
+    ctx.fillText(title, x0 + 13.5, y); ctx.globalAlpha = 1;
+  });
+  if (ms.length > 4) { ctx.fillStyle = "#9FB3CC"; ctx.font = `600 2.8px "Golos Text", sans-serif`; ctx.textAlign = "right"; ctx.fillText(`ещё ${ms.length - 4}`, x0 + w - 2, y0 + 2.4); ctx.textAlign = "left"; }
+}
+// Доска на стене — таблица загрузки на неделю выбранного дня, как «Неделя»: люди × дни, цветные отрезки — проекты
+const weekOf = d => { let a = d; while (a > 0 && DAYS[a - 1].getDay() < DAYS[a].getDay()) a--; let b = d; while (b + 1 < NDAYS && DAYS[b + 1].getDay() > DAYS[b].getDay()) b++; return [a, b]; };
 function renderBoard() {
-  const cols = STAGES.map(s => { const l = work.filter(p => p.stage === s); return `<div class="col${l.length > 4 ? " many" : ""}"><h4>${esc(STAGE_SHORT[s] || s)} · ${l.length}</h4>${l.map(cardHTML).join("")}</div>`; }).join("");
-  board.innerHTML = `<div class="bhead"><b>Проекты в работе · ${work.length}</b><button type="button" class="bopen">⤢ открыть доску</button></div><div class="bcols">${cols}</div>`;
+  const [a, b] = weekOf(S.day), ds = []; for (let d = a; d <= b; d++) ds.push(d);
+  const WDS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+  let cells = `<div class="h"></div>` + ds.map(d => `<div class="h${d === S.day ? " today" : ""}">${WDS[DAYS[d].getDay()]} ${dd(DAYS[d])}</div>`).join("");
+  for (const pp of people) {
+    cells += `<div class="nm"><i style="--fc:${PEOPLE_COLORS[pp.name] || "#ccc"}"></i>${esc(pp.short)}</div>`;
+    for (const d of ds) {
+      if (onVac(pp.name, d)) { cells += `<div class="c vac" data-n="${esc(pp.name)}" data-d="${d}"><span class="hrs">отпуск</span></div>`; continue; }
+      const ts = tasksOf(pp.name, d).sort((x, y) => y.h - x.h), h = ts.reduce((s2, x) => s2 + x.h, 0);
+      const bar = ts.map(x => `<b style="--pc:${x.p.color};width:${Math.min(100, x.h / 8 * 100)}%" title="${esc(pname(x.p))} · ${x.h} ч"></b>`).join("");
+      cells += `<div class="c${d === S.day ? " today" : ""}${h > 8 ? " over" : ""}" data-n="${esc(pp.name)}" data-d="${d}" title="${esc(pp.short)}: ${h} ч"><div class="bar">${bar}</div><span class="hrs">${h ? fmtHrs(h) : ""}</span></div>`;
+    }
+  }
+  board.innerHTML = `<div class="bhead"><b>Загрузка · ${dd(DAYS[a])}–${dd(DAYS[b])}</b><button type="button" class="bopen">📋 проекты</button></div><div class="ld" style="--nd:${ds.length}">${cells}</div>`;
   $("#strip").innerHTML = `<button type="button" class="pbtn bopen" style="flex:0 0 auto">📋 Доска</button>` + STAGES.map(s => { const l = work.filter(p => p.stage === s); return l.length ? `<div class="stg">${esc(STAGE_SHORT[s] || s)}</div>` + l.map(cardHTML).join("") : ""; }).join("");
   if (!dock.hidden) renderDock();
 }
-board.addEventListener("click", e => { if (e.target.closest(".bopen") || !e.target.closest(".card")) openDock(); });
+const fmtHrs = h => (Math.round(h * 10) / 10).toString().replace(".", ",");
+board.addEventListener("click", e => {
+  const c = e.target.closest(".c[data-n]");
+  if (c) { const d = +c.dataset.d; if (d !== S.day) setDay(d); openPerson(c.dataset.n); return; }
+  openDock();
+});
 $("#strip").addEventListener("click", e => { if (e.target.closest(".bopen")) openDock(); });
 
 const dock = $("#dock");
@@ -1443,7 +1510,7 @@ const OBJECTS = [
   { x: 118, y: 48, w: 7, h: 10, tip: () => S.lights ? "Выключить свет" : "Включить свет", go() { S.lights = !S.lights; snd.blip(S.lights ? 880 : 330); } },
   { x: 24, y: 18, w: 20, h: 80, tip: () => S.windowOpen ? "Закрыть окно" : "Открыть окно", go() { S.windowOpen = !S.windowOpen; snd.street(S.windowOpen); snd.whoosh(); } },
   { x: 358, y: 18, w: 20, h: 80, tip: () => S.windowOpen ? "Закрыть окно" : "Открыть окно", go() { S.windowOpen = !S.windowOpen; snd.street(S.windowOpen); snd.whoosh(); } },
-  { x: 55, y: 11, w: 47, h: 29, tip: () => "DPG TV: сдачи сегодня и завтра", go() { const td = work.filter(p => dlText(p).diff === 0).map(pname); sayAt(79, 40, td.length ? "Сегодня сдаём: " + td.join(", ") : "Сегодня сдач нет", 2600); snd.blip(700); } },
+  { x: 55, y: 11, w: 47, h: 29, tip: () => "Телевизор: встречи на день", go() { const ms = meetingsOf(S.day), n = ms.find(m => m.end > S.hour); sayAt(79, 40, n ? `Ближайшая: ${n.t} ${n.title || ""}` : ms.length ? "Встречи на сегодня закончились" : "Сегодня встреч нет", 2600); snd.blip(700); } },
   { x: 108, y: 11, w: 17, h: 30, tip: () => "Постер с яблоком. Почти «Красное яблоко»", go() { sayAt(116, 40, "🍎 когда-нибудь и настоящее", 1600); snd.blip(900); } },
   { x: 41, y: 30, w: 19, h: 70, tip: () => "Доска для сёрфа", go() { sayAt(50, 30, "🏄 после сдачи — на Маврикий", 1800); snd.whoosh(); } },
   { x: 368, y: 160, w: 12, h: 12, tip: () => S.music ? "Станция: выключить лофай (двойной тык — Алиса)" : "Станция: включить лофай (двойной тык — Алиса)", go() {

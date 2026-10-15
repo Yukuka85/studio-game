@@ -343,9 +343,19 @@ def finish(rig, big):
     return out
 
 
-def frame(rig, arms):
+def laptop_on_lap(rig, img):
+    """Ноутбук на коленях: спрайт из листа предметов, низом на колени (кадр лицом вправо — экран к лицу)."""
+    at = Image.open(os.path.join(HERE, "..", "assets", "atlas.png")).convert("RGBA")
+    f = json.load(open(os.path.join(HERE, "..", "assets", "atlas.json")))["laptop"]
+    lp = at.crop((f[0], f[1], f[0] + f[2], f[1] + f[3])); k = .5 / K
+    lp = lp.resize((round(lp.width * k * SS), round(lp.height * k * SS)), Image.LANCZOS).transpose(Image.FLIP_LEFT_RIGHT)
+    x, y = rig.S(rig.r["laptop_at"]); img.alpha_composite(lp, (int(x - lp.width / 2), int(y - lp.height)))
+
+
+def frame(rig, arms, act=None):
     if rig.kind == "side":
         img = body(rig, erase=bool(arms))
+        if act == "laptop" and rig.r.get("laptop_at"): laptop_on_lap(rig, img)
         for s in arms: arm(rig, img, s)
         return finish(rig, img)
     img = rig.canvas()                    # спиной: руки позади головы — сначала руки, потом тело; лицом — наоборот
@@ -379,7 +389,7 @@ def main(only=None):
             rig = Rig(slug, r)
             for act, frames in r["acts"].items():
                 for i, arms in enumerate(frames, 1):
-                    frame(rig, arms).save(os.path.join(CUT, f"{slug}_x_{act}{i}.png")); n += 1
+                    frame(rig, arms, act).save(os.path.join(CUT, f"{slug}_x_{act}{i}.png")); n += 1
         print(slug, n, "кадров занятий")
 
 
