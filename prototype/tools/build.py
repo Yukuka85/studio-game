@@ -19,7 +19,9 @@ def uri(name, mime):
     path = os.path.join(HERE, "assets", name)
     return f"data:{mime};base64," + base64.b64encode(open(path, "rb").read()).decode() if os.path.exists(path) else ""
 amap = open(os.path.join(HERE, "assets", "atlas.json"), encoding="utf-8").read() if os.path.exists(os.path.join(HERE, "assets", "atlas.json")) else "{}"
-out = (src.replace("__DATA__", blob).replace("__BG__", bg).replace("__ATLASMAP__", amap)
+pages = sorted((f for f in os.listdir(os.path.join(HERE, "assets")) if f.startswith("atlas") and f[5:-4].isdigit()), key=lambda f: int(f[5:-4]))
+pages_json = json.dumps([uri(f, "image/png") for f in pages])
+out = (src.replace("__ATLASPAGES__", pages_json).replace("__DATA__", blob).replace("__BG__", bg).replace("__ATLASMAP__", amap)
        .replace("__ATLAS__", uri("atlas.png", "image/png")).replace("__WHEEL__", uri("wheel.png", "image/png")))
 open(os.path.join(HERE, "studio.html"), "w", encoding="utf-8").write(out)
 head = '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>'

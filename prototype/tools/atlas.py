@@ -154,14 +154,31 @@ for name, img in list(sprites.items()):
     if re.search(r"_(d|x)_|_desk$", name):
         bb = img.getbbox()
         if bb: trim[name] = (bb[0], bb[1], img.width, img.height); sprites[name] = img.crop(bb)
-# упаковка полками
-W = 2048; x = y = shelf = 0; pos = {}
-for name, img in sorted(sprites.items(), key=lambda kv: -kv[1].height):
-    if x + img.width + 2 > W: x = 0; y += shelf + 2; shelf = 0
-    pos[name] = [x, y, img.width, img.height]; x += img.width + 2; shelf = max(shelf, img.height)
-atlas = Image.new("RGBA", (W, y + shelf), (0, 0, 0, 0))
-for name, (px, py, w, h) in pos.items(): atlas.paste(sprites[name], (px, py))
-for name, t in trim.items(): pos[name] += list(t)     # [x, y, w, h, сдвиг x, сдвиг y, полная ширина, полная высота]
-atlas.quantize(colors=256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE).save(os.path.join(HERE, "assets", "atlas.png"), optimize=True)
+# упаковка полками по страницам: стр. 0 — исходные спрайты, дальше — сгенерированные кадры.
+# Страница не выше ~7800 px: 2048×7800 ≈ 16 Мп — предел картинки для телефонов
+W, HMAX = 2048, 7800
+pages, pos = [], {}
+def pack(items):
+    x = y = shelf = 0; page = len(pages); placed = {}
+    for name, img in sorted(items, key=lambda kv: -kv[1].height):
+        if x + img.width + 2 > W: x = 0; y += shelf + 2; shelf = 0
+        if y + img.height > HMAX:
+            pages.append((y + shelf, placed)); placed = {}; page += 1; x = y = shelf = 0
+        placed[name] = (x, y, page); x += img.width + 2; shelf = max(shelf, img.height)
+    pages.append((y + shelf, placed))
+gen = lambda n: bool(re.search(r"_(d|x)_|_desk$", n))
+pack([kv for kv in sprites.items() if not gen(kv[0])])
+pack([kv for kv in sprites.items() if gen(kv[0])])
+for i, (h, placed) in enumerate(pages):
+    atlas = Image.new("RGBA", (W, h), (0, 0, 0, 0))
+    for name, (px, py, pg) in placed.items():
+        img = sprites[name]; atlas.paste(img, (px, py))
+        ox, oy, fw, fh = trim.get(name, (0, 0, img.width, img.height))
+        pos[name] = [px, py, img.width, img.height, ox, oy, fw, fh, pg]   # x, y, w, h, сдвиг, полный размер, страница
+    atlas.quantize(colors=256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE).save(os.path.join(HERE, "assets", "atlas.png" if i == 0 else f"atlas{i + 1}.png"), optimize=True)
+    print(f"страница {i + 1}: {W}×{h}")
+for f in os.listdir(os.path.join(HERE, "assets")):     # лишние старые страницы
+    m = re.match(r"atlas(\d+)\.png$", f)
+    if m and int(m.group(1)) > len(pages): os.remove(os.path.join(HERE, "assets", f))
 json.dump(pos, open(os.path.join(HERE, "assets", "atlas.json"), "w"))
 print(len(pos), "спрайтов, атлас", atlas.size, os.path.getsize(os.path.join(HERE, "assets", "atlas.png")) // 1024, "KB")

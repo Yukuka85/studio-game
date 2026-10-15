@@ -135,6 +135,11 @@ select.pbtn { appearance: none; padding-right: 22px; background-image: linear-gr
 @keyframes pop { from { transform: translate(-50%, -80%) scale(.6); } }
 .tip { position: absolute; background: var(--panel); border: 2px solid var(--line); padding: 4px 8px; font-size: 13px; pointer-events: none; white-space: nowrap; box-shadow: 3px 3px 0 var(--shadow); }
 .ghost { position: fixed; z-index: 50; pointer-events: none; transform: translate(-50%, -60%) rotate(-4deg); opacity: .92; }
+#layer, #layer2 { transition: filter .7s ease; }
+body.party #layer { filter: brightness(.45) saturate(1.4); } body.party #layer2 { filter: brightness(.8); }
+#partyBtn.on { background: linear-gradient(90deg, #ff5ea8, #ffb43c, #5ee0ff, #b07bff); background-size: 300% 100%; animation: party-btn 1.2s linear infinite; color: #1a1030; }
+@keyframes party-btn { to { background-position: 300% 0; } }
+@media (max-width: 640px) { #partyBtn .lbl, #tent .lbl { display: none; } }
 .ghost.scruff { opacity: 1; transform-origin: 50% 4%; transform: translate(-50%, -4%); transition: transform .12s ease-out; filter: drop-shadow(0 18px 10px rgba(0,0,0,.35)); }
 .zoom { position: absolute; z-index: 21; right: 16px; bottom: 96px; pointer-events: auto; display: inline-flex; font-size: 16px; }
 .pick { position: absolute; z-index: 22; left: 50%; top: 64px; transform: translateX(-50%); pointer-events: auto; background: var(--lamp); color: #2A2200; padding: 6px 10px; font-weight: 600; box-shadow: 3px 3px 0 var(--shadow); display: flex; gap: 10px; align-items: center; white-space: nowrap; }
@@ -276,8 +281,9 @@ select.pbtn { appearance: none; padding-right: 22px; background-image: linear-gr
     <div class="spacer"></div>
     <label class="proto" id="proto"></label>
     <select class="pbtn" id="role" aria-label="Смотрю как"></select>
-    <button class="pbtn" id="tent" aria-pressed="true" title="Проекты со сроком «?» считать в загрузке">💡 а если выиграем?</button>
+    <button class="pbtn" id="tent" aria-pressed="true" title="Проекты со сроком «?» считать в загрузке">💡<span class="lbl"> а если выиграем?</span></button>
     <button class="pbtn" id="sound" aria-pressed="false" title="Звук">🔇</button>
+    <button class="pbtn" id="partyBtn" title="Вечеринка на 20 секунд">🪩<span class="lbl"> Вечеринка</span></button>
     <button class="pbtn" id="dockBtn" title="Доска проектов">📋 Доска</button>
     <button class="pbtn" id="sumBtn" title="Сводка">🔔</button>
   </header>
@@ -309,6 +315,7 @@ select.pbtn { appearance: none; padding-right: 22px; background-image: linear-gr
 <script type="text/plain" id="bgsrc">__BG__</script>
 <script type="text/plain" id="atlassrc">__ATLAS__</script>
 <script type="application/json" id="atlasmap">__ATLASMAP__</script>
+<script type="application/json" id="atlaspages">__ATLASPAGES__</script>
 <script type="text/plain" id="wheelsrc">__WHEEL__</script>
 <script>
 "use strict";
@@ -491,7 +498,27 @@ const snd = (() => {
       if (on) { if (!ok()) return false; if (!musicTimer) { nextT = ac.currentTime + .1; musicTimer = setInterval(schedule, 100); } return true; }
       clearInterval(musicTimer); musicTimer = null; return false;
     },
-    mute() { this.music(false); this.street(false); },
+    mute() { this.music(false); this.street(false); this.party(0); },
+    // вечеринка: 124 удара в минуту — бочка, хэт, хлопок, бас, арпеджио; лофай на это время притихает
+    party(sec) {
+      if (this._pt) { clearInterval(this._pt); this._pt = null; if (musicGain) musicGain.gain.value = .32; }
+      if (!sec || !ok()) return;
+      musicGain.gain.value = 0;
+      const spb = 60 / 124, end = ac.currentTime + sec, BASS = [55, 55, 65.4, 49], ARP = [440, 523.3, 659.3, 784];
+      let n = 0, next = ac.currentTime + .05;
+      this._pt = setInterval(() => {
+        while (next < ac.currentTime + .3 && next < end) {
+          const t0 = next - ac.currentTime, b = n % 4, bar = Math.floor(n / 4) % 4;
+          tone(120, .22, "sine", .45, t0, -80);
+          noise(.04, .07, 8000, "highpass", t0 + spb / 2);
+          if (b === 1 || b === 3) noise(.11, .14, 1600, "bandpass", t0);
+          tone(BASS[bar], spb * .45, "sawtooth", .07, t0 + spb / 2);
+          tone(ARP[(n * 3) % 4] * (bar === 3 ? 1.12 : 1), spb * .3, "square", .025, t0 + spb / 4);
+          next += spb; n++;
+        }
+        if (ac.currentTime > end) this.party(0);
+      }, 80);
+    },
   };
 })();
 
@@ -500,6 +527,8 @@ const snd = (() => {
 // Масштаб отрисовки задаём в пикселях фона (2000×1493): человек стоя ≈ 230 px, стул ≈ 155 px.
 const ATLAS = new Image(); let atlasReady = false;
 ATLAS.onload = () => { atlasReady = true; }; ATLAS.src = document.getElementById("atlassrc").textContent.trim();
+// остальные страницы атласа (сгенерированные кадры): f[8] — номер страницы
+const ATLASES = [ATLAS, ...JSON.parse(document.getElementById("atlaspages").textContent).map(src => { const im = new Image(); im.src = src; return im; })];
 const AMAP = JSON.parse(document.getElementById("atlasmap").textContent);
 const WHEEL = new Image(); WHEEL.src = document.getElementById("wheelsrc").textContent.trim();
 const SLUG = p => (CFG.sprites || {})[p.name] || "free";
@@ -513,9 +542,10 @@ function fkey(p, pose) {
 function dims(key) { const f = AMAP[key]; if (!f) return [20, 30]; const k = scaleOf(key) / 5; return [(f[6] || f[2]) * k, (f[7] || f[3]) * k]; }
 // кадр в прямоугольник полного размера (у обрезанных кадров — со сдвигом)
 function drawA(c2, f, dx, dy, dw, dh) {
-  if (!f[6]) { c2.drawImage(ATLAS, f[0], f[1], f[2], f[3], dx, dy, dw, dh); return; }
+  const img = ATLASES[f[8] || 0]; if (!img.complete || !img.naturalWidth) return;
+  if (!f[6]) { c2.drawImage(img, f[0], f[1], f[2], f[3], dx, dy, dw, dh); return; }
   const sx = dw / f[6], sy = dh / f[7];
-  c2.drawImage(ATLAS, f[0], f[1], f[2], f[3], dx + f[4] * sx, dy + f[5] * sy, f[2] * sx, f[3] * sy);
+  c2.drawImage(img, f[0], f[1], f[2], f[3], dx + f[4] * sx, dy + f[5] * sy, f[2] * sx, f[3] * sy);
 }
 function blitEx(c2, key, x, y, face, tilt, sx = 1, sy = 1) {
   const f = AMAP[key]; if (!f || !atlasReady) return;
@@ -922,7 +952,7 @@ function programStep(a, t) {
 }
 function stepPrograms(t) {
   for (const a of actors) {
-    const f = a.forced; if (!f || a.carried || a.mode !== "placed") continue;
+    const f = a.forced; if (!f || a.carried || a.mode !== "placed" || f.kind === "party") continue;
     const cur = programStep(a, t);
     if (!cur) {   // закончил — к делам
       a.forced = null; a.t = null; updateTargets(false);
@@ -941,14 +971,153 @@ function stepPrograms(t) {
   }
 }
 function programLook(a, t) {
+  if (a.forced?.kind === "party") {
+    if (!a.forced.t0) a.forced.t0 = t;
+    const i = Math.floor((t - a.forced.t0 + a.bob * 811) / (60000 / 124)) % DANCE.length, k = `c_${SLUG(a.p)}_x_${DANCE[i]}`;
+    return AMAP[k] ? { key: k, face: 1, own: true } : null;
+  }
   const cur = programStep(a, t); if (!cur || !cur.st.act) return null;
   const { st, e } = cur, fr = st.frames[Math.floor(e / (st.ms || st.dur)) % st.frames.length];
   const k = `c_${SLUG(a.p)}_x_${st.act}${fr}`;
   return AMAP[k] ? { key: k, face: st.pose === "sitSide" ? a.face : 1, own: true } : null;
 }
+// ---------- мозговой штурм: лампочка, взлохматить голову, прыжок, радуга, лбом о доску ----------
+const STORM = {
+  bulb: { dur: 1900, say: ["идея!", "эврика!", "о! а если…", "придумал!"] },
+  ruffle: { dur: 1500, say: ["думай, думай…", "аааа", "ну же…"] },
+  jump: { dur: 1300, say: ["да!", "это оно!", "вау-эффект!"] },
+  rainbow: { dur: 2300, say: ["красота!", "вот это концепт", "клиент заплачет"] },
+  bonk: { dur: 1700, say: ["не то…", "ну почему…", "ещё правки?!"] },
+};
+const storming = a => a.mode === "placed" && !a.carried && (a.t?.spot?.kind === "meet" || a.forced?.kind === "board" || a.forced?.kind === "bean" || (a.t?.act || "").startsWith("штурм"));
+function stepStorms(t) {
+  for (const a of actors) {
+    if (!storming(a) || party) { a.storm = null; continue; }
+    const st = a.storm;
+    if (st && t < st.t0 + st.dur + st.gap) {
+      const e = t - st.t0;
+      if (st.kind === "bonk" && e < st.dur) { const n = Math.floor(e / 530); if (n !== st.n && e % 530 > 260) { st.n = n; const [hx, hy] = headPos(a); for (let k = 0; k < 4; k++) parts.push({ x: hx + (Math.random() - .5) * 8, y: hy + 4, vx: (Math.random() - .5) * 26, vy: -14 - Math.random() * 10, grav: 40, life: .9, c: "#FFE66B", txt: "✦" }); snd.blip(240); } }
+      if (st.kind === "ruffle" && e < st.dur && Math.random() < .12) { const [hx, hy] = headPos(a); parts.push({ x: hx + (Math.random() - .5) * 10, y: hy + 3, vx: (Math.random() - .5) * 20, vy: -10, grav: 30, life: .6, c: "#C9A06A", s: 1 }); }
+      continue;
+    }
+    const back = a.pose === "standBack", atWall = back && a.y < im(560);
+    const kinds = back ? ["bulb", "ruffle", "jump", "rainbow", ...(atWall ? ["bonk", "bonk"] : [])] : a.pose === "stand" ? ["bulb", "ruffle", "jump", "rainbow"] : ["bulb", "rainbow"];
+    const kind = kinds[Math.floor(Math.random() * kinds.length)];
+    a.storm = { kind, t0: t, dur: STORM[kind].dur, gap: 1200 + Math.random() * 3800, n: -1 };
+    if (Math.random() < .7) say(a, STORM[kind].say[Math.floor(Math.random() * STORM[kind].say.length)], 1300);
+    if (kind === "bulb") snd.blip(1046); if (kind === "jump") snd.blip(880);
+  }
+}
+function stormLook(a, t) {
+  const st = a.storm; if (!st || t > st.t0 + st.dur) return null;
+  const e = t - st.t0, s = SLUG(a.p), b = a.pose === "standBack" ? "b" : a.pose === "stand" ? "" : null;
+  if (b === null) return null;
+  const alt = (x, y, ms) => Math.floor(e / ms) % 2 ? y : x;
+  const name = { bulb: `${b}point1`, ruffle: alt(`${b}ruffle1`, `${b}ruffle2`, 160), jump: alt(`${b}cheer1`, `${b}cheer2`, 200), rainbow: `${b}cheer1`, bonk: null }[st.kind];
+  if (!name) return { key: fkey(a.p, a.pose === "standBack" ? "back" : "stand"), face: 1, own: true };
+  const k = `c_${s}_x_${name}`; return AMAP[k] ? { key: k, face: 1, own: true } : null;
+}
+// сдвиги тела: прыжок, удар лбом о доску (вверх — к стене), танец
+function bodyShift(a, t) {
+  const st = a.storm;
+  if (st && t < st.t0 + st.dur) {
+    const e = t - st.t0;
+    if (st.kind === "jump") return -Math.abs(Math.sin(e / st.dur * Math.PI * 3)) * 6;
+    if (st.kind === "bonk") { const p = (e % 530) / 530; return -(p < .45 ? p / .45 : Math.max(0, 1 - (p - .45) / .15)) * 2.4; }
+  }
+  if (a.forced?.kind === "party" && a.mode === "placed") return -Math.abs(Math.sin((t + a.bob * 97) / (60000 / 124) * Math.PI)) * 3.2;
+  return 0;
+}
+// лампочка и радуга над головой
+function stormFx(c2, t) {
+  for (const a of actors) {
+    const st = a.storm; if (!st || t > st.t0 + st.dur || a.mode !== "placed") continue;
+    const e = t - st.t0, [hx, hy0] = headPos(a), hy = hy0 + bodyShift(a, t), fade = Math.min(1, e / 150, (st.dur - e) / 250);
+    if (st.kind === "bulb") {
+      const y = hy - 7, k = Math.min(1, e / 180) * (1 + Math.sin(e / 60) * .05);
+      glow(c2, hx, y, 13, "#FFE66B", .55 * fade);
+      c2.globalAlpha = fade; c2.save(); c2.translate(hx, y); c2.scale(k, k);
+      c2.strokeStyle = "#FFE66B"; c2.lineWidth = .5;
+      for (let i = 0; i < 8; i++) { const an = i * Math.PI / 4 + e / 900; c2.beginPath(); c2.moveTo(Math.cos(an) * 5, Math.sin(an) * 5); c2.lineTo(Math.cos(an) * 7, Math.sin(an) * 7); c2.stroke(); }
+      c2.fillStyle = "#FFF3A6"; c2.strokeStyle = "#3A2A10"; c2.lineWidth = .5;
+      c2.beginPath(); c2.arc(0, -.6, 3.2, 0, Math.PI * 2); c2.fill(); c2.stroke();
+      c2.fillStyle = "#9AA0B4"; c2.fillRect(-1.5, 2.2, 3, 1.8); c2.strokeRect(-1.5, 2.2, 3, 1.8);
+      c2.restore(); c2.globalAlpha = 1;
+    }
+    if (st.kind === "rainbow") {
+      const C = ["#FF5A5A", "#FFA552", "#FFE66B", "#7EE07E", "#6FC3FF", "#A98BFF"], grow = Math.min(1, e / 500);
+      c2.globalAlpha = .85 * fade; c2.lineWidth = .9;
+      C.forEach((c, i) => { c2.strokeStyle = c; c2.beginPath(); c2.arc(hx, hy + 3, 11 - i * .9, Math.PI, Math.PI + Math.PI * grow); c2.stroke(); });
+      c2.globalAlpha = 1;
+      if (Math.random() < .2) parts.push({ x: hx + (Math.random() - .5) * 22, y: hy - 4 - Math.random() * 6, vx: 0, vy: -4, life: .7, c: "#FFFFFF", txt: "✧" });
+    }
+  }
+}
+// ---------- вечеринка на 20 секунд ----------
+let party = null;
+const PARTY_MS = 20000;
+const DANCE = ["dance1", "dance2", "dance1", "dance2", "cheer1", "cheer2", "dance2", "dance1", "point1", "cheer2"];
+function startParty() {
+  const now = performance.now(); if (party && now < party.until) return;
+  party = { t0: now, until: now + PARTY_MS };
+  document.body.classList.add("party"); $("#partyBtn").classList.add("on");
+  const crowd = actors.filter(a => (a.mode === "placed" || a.mode === "walking") && !a.carried);
+  // танцпол — проход между столами, все в линию с разбросом
+  const xs = [im(430), im(600), im(760), im(1300), im(1460), im(1620), im(920)].sort(() => Math.random() - .5);
+  crowd.forEach((a, i) => {
+    const sp = { x: xs[i % xs.length] + (Math.random() - .5) * 6, y: ROWS.mid + (i % 2 ? 6 : -4), pose: "stand", face: 1 };
+    a.storm = null;
+    a.forced = { kind: "party", prog: { steps: [{ pose: "stand", act: "party", dur: PARTY_MS }], say: [] }, t0: 0, total: PARTY_MS };
+    a.t = { k: "spot", spot: sp, act: "танцует" };
+    if (a.mode === "placed" && Math.hypot(a.x - sp.x, a.y - sp.y) < 2) place(a, sp); else { a.mode = "walking"; a.path = route(a.x, a.y, sp.x, sp.y); }
+    setTimeout(() => say(a, ["вечеринка!", "еееее!", "музыку громче!", "пятница же!", "работа подождёт", "уиии!"][Math.floor(Math.random() * 6)], 1500), 200 + i * 220);
+  });
+  for (let k = 0; k < 60; k++) parts.push({ x: Math.random() * W, y: -4, vx: (Math.random() - .5) * 20, vy: 20 + Math.random() * 30, grav: 10, life: 4, c: ["#FF5EA8", "#FFB43C", "#5EE0FF", "#B07BFF", "#7EE07E", "#FFE66B"][k % 6], s: 1.6 });
+  snd.party(PARTY_MS / 1000);
+}
+function stepParty(t) {
+  if (!party) return;
+  const left = Math.max(0, party.until - t);
+  if (left > 0) $("#partyBtn").textContent = `🪩 0:${String(Math.ceil(left / 1000)).padStart(2, "0")}`;
+  if (Math.random() < .03) for (let k = 0; k < 6; k++) parts.push({ x: Math.random() * W, y: -4, vx: (Math.random() - .5) * 16, vy: 25 + Math.random() * 20, grav: 8, life: 3, c: ["#FF5EA8", "#FFB43C", "#5EE0FF", "#B07BFF"][k % 4], s: 1.4 });
+  if (left > 0) return;
+  for (const a of actors) if (a.forced?.kind === "party") { a.forced = null; a.t = null; }
+  updateTargets(false);
+  actors.forEach((a, i) => { if (a.mode === "walking" && Math.random() < .6) setTimeout(() => say(a, ["эх, хорошо было", "так, за работу", "ещё бы разок!", "уф"][Math.floor(Math.random() * 4)], 1300), i * 250); });
+  party.ended = t; setTimeout(() => { document.body.classList.remove("party"); }, 10);
+  $("#partyBtn").classList.remove("on"); $("#partyBtn").innerHTML = `🪩<span class="lbl"> Вечеринка</span>`;
+  setTimeout(() => { if (party?.ended) party = null; }, 900);
+}
+// свет вечеринки: гасим, по комнате бегают цветные пятна
+const partyK = t => !party ? 0 : party.ended ? Math.max(0, 1 - (t - party.ended) / 800) : Math.min(1, (t - party.t0) / 700);
+function partyLights(t) {
+  const k = partyK(t); if (!k) return;
+  ctx.fillStyle = `rgba(10,6,34,${.62 * k})`; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < 7; i++) {
+    const x = W / 2 + Math.sin(t / 1100 + i * 1.7) * W * .44, y = H * .55 + Math.cos(t / 1300 + i * 2.3) * H * .38;
+    glow(ctx, x, y, 34 + (i % 3) * 8, `hsl(${(t / 18 + i * 52) % 360} 95% 60%)`, .6 * k);
+  }
+  ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+}
+function discoBall(c2, t) {
+  const k = partyK(t); if (!k) return;
+  const x = W / 2, y = -8 + 30 * Math.min(1, k * 1.2), r = 7;
+  c2.globalAlpha = k;
+  c2.strokeStyle = "#8C8FA8"; c2.lineWidth = .5; c2.beginPath(); c2.moveTo(x, 0); c2.lineTo(x, y - r); c2.stroke();
+  c2.globalCompositeOperation = "lighter";
+  for (let i = 0; i < 10; i++) { const an = t / 700 + i * Math.PI / 5; c2.strokeStyle = `hsla(${(i * 36 + t / 10) % 360},90%,70%,${.18 * k})`; c2.lineWidth = 2.5; c2.beginPath(); c2.moveTo(x, y); c2.lineTo(x + Math.cos(an) * 160, y + Math.abs(Math.sin(an)) * 160 + 40); c2.stroke(); }
+  c2.globalCompositeOperation = "source-over";
+  const gr = c2.createRadialGradient(x - 2, y - 2, 1, x, y, r); gr.addColorStop(0, "#FFFFFF"); gr.addColorStop(1, "#7A7F9A");
+  c2.fillStyle = gr; c2.beginPath(); c2.arc(x, y, r, 0, Math.PI * 2); c2.fill();
+  c2.save(); c2.beginPath(); c2.arc(x, y, r, 0, Math.PI * 2); c2.clip();
+  for (let gx = -r; gx < r; gx += 1.8) for (let gy = -r; gy < r; gy += 1.8) { if (Math.random() < .25) { c2.fillStyle = `hsl(${Math.random() * 360} 90% 80%)`; c2.fillRect(x + gx + ((t / 80) % 1.8), y + gy, 1.4, 1.4); } }
+  c2.restore(); c2.globalAlpha = 1;
+}
 // какой кадр сейчас у человека
 function look(a, t) {
   const p = a.p;
+  if (a.storm && a.mode === "placed") { const L = stormLook(a, t); if (L) return L; }
   if (a.forced && a.mode === "placed") { const L = programLook(a, t); if (L) return L; }
   if (a.joyUntil > t) { const k = cyc(p, ["joy1", "joy2"], t, 180); if (k) return { key: k, face: 1 }; }
   if (a.mode === "walking" && a.dir === "side") { const k = cyc(p, ["walkSide1", "walkSide2", "walkSide3", "walkSide2"], t, 140); if (k) return { key: k, face: a.face }; }
@@ -988,6 +1157,7 @@ function drawActor(c2, a, t) {
   let tilt = 0, sxx = 1, syy = 1;
   if (atDesk && l > 0 && a.pose === "sitSide" && !L.own) tilt = (L.face || 1) * (.018 + Math.sin(t / 1700 + a.bob * 3) * .018);
   if (a.mode === "walking") y -= Math.abs(Math.sin(t / 170 * Math.PI)) * .6;
+  y += bodyShift(a, t);
   const micro = a.microUntil > t ? a.micro : null;
   if (micro === "stretch" && !L.own) { const k = Math.sin((1 - (a.microUntil - t) / 900) * Math.PI); syy = 1 + k * .06; sxx = 1 - k * .03; }
   if (L.rot) { const [w, h] = dims(L.key); blit(c2, L.key, x, y - w / 2, 1, L.rot); }
@@ -1054,7 +1224,8 @@ function render(t) {
   actors.forEach((a, i) => { if (working(i)) (SEATS[i].glow || []).forEach(([x, y]) => glow(ctx, x, y, 18, "#6FD0FF", .26 + dk * .2)); });
   if (dk > .2 || !S.lights) SEATS.forEach(s => { if (s.lamp) glow(ctx, ...s.lamp, 28, "#FFB45E", .35); });
   if (S.music) glow(ctx, im(1872), im(838), 14, "#B06BFF", .5);
-  ctx.globalCompositeOperation = "source-over";
+  ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+  partyLights(t);
   const cx = im(1694), cy = im(85), hh = (h % 12) / 12 * Math.PI * 2, mm = (h % 1) * Math.PI * 2;
   ctx.fillStyle = "#FBF8F0"; ctx.beginPath(); ctx.arc(cx, cy, 7.4, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = "#2A2340"; ctx.lineCap = "round";
@@ -1101,7 +1272,14 @@ function render(t) {
   if (mon.kind) L.push({ z: mon.kind === "ghost" ? 1e6 : mon.y, d: () => drawMonster(sx2, t) });
   L.sort((p, q) => p.z - q.z).forEach(o => o.d());
   if (tint > 0) { sx2.save(); sx2.setTransform(1, 0, 0, 1, 0, 0); sx2.globalCompositeOperation = "source-atop"; sx2.fillStyle = `rgba(14,16,56,${tint})`; sx2.fillRect(0, 0, sprC.width, sprC.height); sx2.restore(); }
+  const pk = partyK(t);
+  if (pk) {   // люди в свете вечеринки: темнее и в цветных бликах
+    sx2.save(); sx2.setTransform(1, 0, 0, 1, 0, 0); sx2.globalCompositeOperation = "source-atop";
+    sx2.fillStyle = `rgba(10,6,34,${.35 * pk})`; sx2.fillRect(0, 0, sprC.width, sprC.height);
+    sx2.fillStyle = `hsla(${(t / 12) % 360},90%,60%,${.18 * pk})`; sx2.fillRect(0, 0, sprC.width, sprC.height); sx2.restore();
+  }
   ctx2.save(); ctx2.setTransform(1, 0, 0, 1, 0, 0); ctx2.drawImage(sprC, 0, 0); ctx2.restore();
+  stormFx(ctx2, t); discoBall(ctx2, t);
   G = ctx2;
   workCues(t);
   for (const q of parts) {
@@ -1810,6 +1988,7 @@ $("#role").value = S.role;
 $("#role").onchange = e => { S.role = e.target.value; store.set("role", S.role); refresh(); toast(role().edit ? (role().edit === "all" ? "Можно ставить кого угодно" : "Можно ставить: " + role().edit.map(n => byName[n].short).join(", ")) : "Только просмотр"); };
 $("#tent").onclick = () => { S.tent = !S.tent; $("#tent").setAttribute("aria-pressed", S.tent); toast(S.tent ? "Предварительные проекты (срок «?») — в загрузке" : "Считаю только точные проекты"); refresh(); };
 $("#sound").onclick = () => setSound(!S.sound);
+$("#partyBtn").onclick = () => { snd.unlock(); startParty(); };
 $("#sumBtn").onclick = openSummary;
 $("#dockBtn").onclick = () => dock.hidden ? openDock() : closeDock();
 $("#hour").oninput = e => { const prev = S.hour; S.hour = +e.target.value; renderClock(); updateTargets(Math.abs(S.hour - prev) > 1.01); };
@@ -1836,7 +2015,7 @@ addEventListener("keydown", e => {
 let last = performance.now();
 function frame(t) {
   const dt = Math.min(.05, (t - last) / 1000); last = t;
-  stepActors(dt); stepPrograms(t);
+  stepActors(dt); stepPrograms(t); stepStorms(t); stepParty(t);
   // зевота и спонтанные пузыри
   if (!REDUCED && Math.random() < dt * .08) {
     const a = actors[Math.floor(Math.random() * actors.length)];
