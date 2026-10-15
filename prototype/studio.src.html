@@ -64,20 +64,27 @@ select.pbtn { appearance: none; padding-right: 22px; background-image: linear-gr
 .bhead b { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bopen { border: 0; background: #FFC94A; color: #2A2200; font: inherit; font-size: calc(var(--u) * 2.1px); padding: calc(var(--u) * .5px) calc(var(--u) * 1.2px); cursor: pointer; box-shadow: calc(var(--u) * .4px) calc(var(--u) * .4px) 0 rgba(30,20,60,.35); white-space: nowrap; }
 .bcols { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: minmax(0, 1fr); gap: calc(var(--u) * 1.2px); }
-.ld { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.15fr repeat(var(--nd), 1fr); grid-auto-rows: 1fr; gap: calc(var(--u) * .45px); font-size: clamp(8px, calc(var(--u) * 2.5px), 13px); color: #2A2340; }
-.ld .h { font-family: var(--f-display); font-weight: 700; text-transform: uppercase; font-size: clamp(7px, calc(var(--u) * 2px), 11px); color: #6A6288; align-self: end; text-align: center; white-space: nowrap; }
-.ld .h.today { color: #C2185B; }
-.ld .nm { display: flex; align-items: center; gap: calc(var(--u) * .6px); font-weight: 700; white-space: nowrap; overflow: hidden; }
-.ld .nm i { flex: 0 0 auto; width: calc(var(--u) * 1.4px); height: calc(var(--u) * 1.4px); border-radius: 50%; background: var(--fc); }
-.ld .c { position: relative; background: #EAE5F3; border-radius: 2px; overflow: hidden; cursor: pointer; display: flex; align-items: stretch; }
-.ld .c.today { box-shadow: inset 0 0 0 calc(var(--u) * .35px) #C2185B; }
-.ld .c .bar { display: flex; width: 100%; }
-.ld .c .bar b { flex: 0 0 auto; height: 100%; background: var(--pc); border-right: 1px solid rgba(255,255,255,.55); }
-.ld .c .hrs { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #2A2340; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }
-.ld .c.over .hrs { color: #B00020; }
-.ld .c.vac { background: repeating-linear-gradient(135deg, #DCEFF6 0 4px, #EEF7FA 4px 8px); }
-.ld .c.vac .hrs { font-weight: 600; color: #3A7790; font-size: .85em; }
-.ld .c.off { background: transparent; box-shadow: none; }
+.wwrap { overflow-x: auto; margin: 0 -4px; } .wwrap .wtable { font-size: 12px; } .wwrap .wtable .pn { min-width: 90px; } .wwrap .sum { display: none; }
+.wtable { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; color: var(--ink); }
+.wtable th, .wtable td { padding: 4px 6px; text-align: center; border-bottom: 1px solid rgba(255,255,255,.06); white-space: nowrap; }
+.wtable th { font-size: 11px; color: var(--ink-dim); font-weight: 700; text-transform: uppercase; position: sticky; top: 0; background: var(--panel); }
+.wtable .pn { text-align: left; white-space: normal; min-width: 150px; }
+.wtable .pn i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--cc); margin-right: 6px; vertical-align: -1px; }
+.wtable .prow { cursor: pointer; } .wtable .prow td { background: rgba(255,255,255,.05); border-top: 6px solid transparent; }
+.wtable .prow .dl { font-size: 11px; color: var(--ink-dim); font-weight: 400; }
+.wtable .pt { font-weight: 700; }
+.wtable .mrow, .wtable .srow { cursor: pointer; } .wtable .who { padding-left: 22px; color: var(--ink-dim); }
+.wtable td.today, .wtable th.today { background: rgba(255,201,74,.12); color: var(--lamp); }
+.wtable td.ovr { color: #FF6B7A; font-weight: 800; }
+.wtable td.vac { color: #7EC8E3; font-size: 11px; }
+.wtable .sum th { text-align: left; padding-top: 14px; color: var(--lamp); }
+.dock .wtable { color: #2A2340; } .dock .wtable th { background: #E6E0F0; color: #5A5278; border-bottom: 2px solid #D6CEE6; }
+.dock .wtable td { border-bottom: 1px solid #E2DCEC; } .dock .wtable .prow td { background: #E9E3F3; }
+.dock .wtable .who, .dock .wtable .prow .dl { color: #6A6288; }
+.dock .wtable td.today, .dock .wtable th.today { background: #FFF1C9; color: #8A5A00; }
+.dock .wtable td.ovr { color: #C2185B; } .dock .wtable td.vac { color: #2C7A96; }
+.dock .wtable .sum th { color: #3A3355; background: transparent; position: static; }
+.dock .wtable tr:hover td { background: #FFF8E6; }
 .col { display: flex; flex-direction: column; gap: calc(var(--u) * 1px); min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: none; }
 .col.many .card .nm { -webkit-line-clamp: 1; }
 .col.many .card .meta { margin-top: 0; }
@@ -615,7 +622,13 @@ const SPOTS = [
 ];
 const FALLBACK = { sofa: ["sofa", "bean"], bean: ["bean", "sofa"], stand: ["coffee", "bean"], cooler: ["coffee", "sofa"], bar: ["coffee", "sofa", "bean"], kitchen: ["coffee", "sofa", "bean"], meet: ["meet"], wheel: ["wheel"] };
 const ACT = { sofa: "с ноутом на диване", bean: "с ноутом на кресле-мешке", coffee: "в кофейном углу", stand: "работает стоя", bar: "в кофейном углу", cooler: "в кофейном углу", kitchen: "в кофейном углу", wheel: "крутится как белка в колесе" };
-const ROWS = { top: im(560), mid: im(905), bot: im(1300) }, LANES = [im(620), im(1330)], EXIT = [-10, im(905)];
+const ROWS = { top: im(560), mid: im(905), bot: im(1300) }, LANES = [im(620), im(1330)];
+// вход — дверь в левой стене над столом; от неё сначала выходят на свободный пол, потом в проходы (не через принтер)
+const DOOR = [im(78), im(528)], DOOR_IN = [im(330), im(548)], EXIT = DOOR;
+const viaDoorIn = (x1, y1) => [DOOR_IN, ...route(DOOR_IN[0], DOOR_IN[1], x1, y1)];
+const viaDoorOut = (x0, y0) => [...route(x0, y0, DOOR_IN[0], DOOR_IN[1]), DOOR];
+// монстры по комнате: от двери по верхнему проходу, вниз, назад по среднему, вверх и к двери
+const monPath = () => [DOOR, DOOR_IN, ...bendTop([Object.assign([DOOR_IN[0], ROWS.top], { top: true }), Object.assign([LANES[1], ROWS.top], { top: true })]), [LANES[1], ROWS.mid], [LANES[0], ROWS.mid], [LANES[0], topY(LANES[0])], ...bendTop([Object.assign([LANES[0], ROWS.top], { top: true }), Object.assign([DOOR_IN[0], ROWS.top], { top: true })]), DOOR_IN, DOOR];
 const zoneOf = y => y < im(680) ? "top" : y > im(1000) ? "bot" : "mid";
 const isStand = pose => pose === "stand" || pose === "standBack" || pose === "standSide";
 
@@ -668,13 +681,26 @@ function wantAt(n, d, h) {
   return { k: "desk", act: l > 8 ? "завал, не встаёт из-за стола" : hasDesk(n) ? "за своим столом" : "с ноутом на диване" };
 }
 const destOf = (a, t) => t.k === "spot" ? t.spot : t.k === "home" ? { x: EXIT[0], y: EXIT[1], pose: "stand" } : a.seat;
+// верхний проход не прямой: под столом Вадима — ниже, между мешками и центральным столом — узкая полоса выше
+const TOP_BENDS = [[im(650), im(552), im(515)], [im(1660), im(515), im(540)]];
+const topY = x => x < TOP_BENDS[0][0] ? TOP_BENDS[0][1] : x > TOP_BENDS[1][0] ? TOP_BENDS[1][2] : im(515);
+function bendTop(pts) {
+  const out = [];
+  pts.forEach((p, i) => {
+    const q = pts[i - 1];
+    if (q && q.top && p.top) TOP_BENDS.forEach(([bx]) => { if ((q[0] - bx) * (p[0] - bx) < 0) out.push(...(q[0] < p[0] ? [[bx - 4, topY(bx - 4)], [bx + 4, topY(bx + 4)]] : [[bx + 4, topY(bx + 4)], [bx - 4, topY(bx - 4)]])); });
+    out.push(p.top ? [p[0], topY(p[0])] : [p[0], p[1]]);
+  });
+  return out;
+}
 function route(x0, y0, x1, y1) {
   const z0 = zoneOf(y0), z1 = zoneOf(y1);
-  if (z0 === z1 && Math.abs(y1 - y0) < 12) return [[x1, y1]];
-  const pts = [[x0, ROWS[z0]]];
-  if (z0 !== z1) { const mid = (x0 + x1) / 2, ln = LANES.reduce((b, l) => Math.abs(l - mid) < Math.abs(b - mid) ? l : b, LANES[0]); pts.push([ln, ROWS[z0]], [ln, ROWS[z1]]); }
-  pts.push([x1, ROWS[z1]], [x1, y1]);
-  return pts;
+  if (z0 === z1 && Math.abs(y1 - y0) < 12 && Math.abs(x1 - x0) < im(160)) return [[x1, y1]];
+  const row = (x, z) => { const p = [x, ROWS[z]]; if (z === "top") p.top = true; return p; };
+  const pts = [row(x0, z0)];
+  if (z0 !== z1) { const mid = (x0 + x1) / 2, ln = LANES.reduce((b, l) => Math.abs(l - mid) < Math.abs(b - mid) ? l : b, LANES[0]); pts.push(row(ln, z0), row(ln, z1)); }
+  pts.push(row(x1, z1), [x1, y1]);
+  return bendTop(pts);
 }
 function place(a, d) { a.x = d.x; a.y = d.y; a.pose = a.t?.lie ? "lie" : d.pose; a.face = d.face || 1; a.mode = "placed"; }
 function updateTargets(instant) {
@@ -702,8 +728,9 @@ function updateTargets(instant) {
       place(a, dst); continue;
     }
     if (key === prevKey && (a.mode === "placed" || a.mode === "walking" || (a.mode === "hidden" && t.k === "home"))) continue;
-    if (a.mode === "hidden" || a.mode === "away") { if (t.k === "home") { a.mode = "hidden"; continue; } a.x = EXIT[0]; a.y = EXIT[1]; }
-    a.mode = "walking"; a.path = route(a.x, a.y, dst.x, dst.y);
+    const fromDoor = a.mode === "hidden" || a.mode === "away";
+    if (fromDoor) { if (t.k === "home") { a.mode = "hidden"; continue; } a.x = DOOR[0]; a.y = DOOR[1]; }
+    a.mode = "walking"; a.path = fromDoor ? viaDoorIn(dst.x, dst.y) : t.k === "home" ? viaDoorOut(a.x, a.y) : route(a.x, a.y, dst.x, dst.y);
   }
 }
 function stepActors(dt) {
@@ -777,12 +804,21 @@ function spawnMonster(kind) {
   } else if (kind === "slime") {
     Object.assign(mon, { x: 120 + Math.random() * 180, y: 176 + Math.random() * 12, drop: 70, phase: "drop", face: Math.random() < .5 ? -1 : 1 });
   } else if (kind === "zombie") {
-    Object.assign(mon, { x: -14, y: ROWS.mid + 2, face: 1, scared: new Set() });
+    Object.assign(mon, { x: DOOR[0], y: DOOR[1], face: 1, scared: new Set(), path: monPath().slice(1).map(p => [...p]) });
     sayAt(10, ROWS.mid - 44, "мозги… бриф…", 2200);
-  } else Object.assign(mon, { x: W + 20, y: ROWS.bot + 2, face: -1 });
+  } else Object.assign(mon, { x: DOOR[0], y: DOOR[1], face: 1, path: monPath().slice(1).map(p => [...p]) });
   nextMon = now + 60000 + Math.random() * 60000;
 }
 function endMonster() { mon.kind = null; }
+// идти по точкам; true — дошёл до конца
+function followPath(m, step) {
+  while (step > 0 && m.path.length) {
+    const [tx, ty] = m.path[0], dx = tx - m.x, dy = ty - m.y, d = Math.hypot(dx, dy);
+    if (Math.abs(dx) > .5) m.face = dx < 0 ? -1 : 1;
+    if (d <= step) { m.x = tx; m.y = ty; m.path.shift(); step -= d; } else { m.x += dx / d * step; m.y += dy / d * step; step = 0; }
+  }
+  return !m.path.length;
+}
 function stepMonster(dt, now) {
   if (!mon.kind) { if (now > nextMon && !REDUCED && shade.hidden) spawnMonster(); return; }
   const age = (now - mon.t0) / 1000;
@@ -806,14 +842,15 @@ function stepMonster(dt, now) {
     else if (mon.phase === "crawl") { mon.x = clamp(mon.x + mon.face * 9 * dt, 20, 380); if (age - mon.crawlAt > 7) { mon.phase = "melt"; mon.meltAt = age; } }
     else { if (age - mon.meltAt > 2.6) endMonster(); mon.alpha = clamp(1 - (age - mon.meltAt - 1.8) / .8, 0, 1); }
   } else if (mon.kind === "zombie") {
-    mon.x += 20 * dt;
+    if (followPath(mon, 20 * dt)) { endMonster(); return; }
     actors.forEach(a => { if (a.mode === "placed" && !mon.scared.has(a) && Math.abs(a.x - mon.x) < 18 && Math.abs(a.y - mon.y) < 50) { mon.scared.add(a); say(a, ["а-а-а!", "только не сейчас", "это клиент?"][mon.scared.size % 3], 1500); a.spinUntil = now + 1200; } });
-    if (mon.x > W + 20) endMonster();
+
   } else {
-    mon.x -= 48 * dt; mon.rot -= 3.2 * dt;
+    if (followPath(mon, 44 * dt)) { endMonster(); return; }
+    mon.rot += mon.face * 3.2 * dt;
     if (Math.random() < .12) parts.push({ x: mon.x, y: mon.y - 8, vx: (Math.random() - .5) * 30, vy: -20 - Math.random() * 20, grav: 90, life: 1.4, c: ["#F4F0E6", "#FFE38A", "#FF8FB5"][Math.floor(Math.random() * 3)], s: 2, floor: mon.y });
     if (!mon.said && mon.x < 300) { mon.said = true; const v = nearest(mon.x, mon.y, 90); if (v) say(v, "мои стикеры!", 1500); }
-    if (mon.x < -30) endMonster();
+
   }
 }
 // У каждого монстра — кадры только из одного листа (новые мелкие), чтобы он не рос и не сжимался от кадра к кадру
@@ -1395,28 +1432,12 @@ function drawTV(t) {
 // Доска на стене — таблица загрузки на неделю выбранного дня, как «Неделя»: люди × дни, цветные отрезки — проекты
 const weekOf = d => { let a = d; while (a > 0 && DAYS[a - 1].getDay() < DAYS[a].getDay()) a--; let b = d; while (b + 1 < NDAYS && DAYS[b + 1].getDay() > DAYS[b].getDay()) b++; return [a, b]; };
 function renderBoard() {
-  const [a, b] = weekOf(S.day), ds = []; for (let d = a; d <= b; d++) ds.push(d);
-  const WDS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
-  let cells = `<div class="h"></div>` + ds.map(d => `<div class="h${d === S.day ? " today" : ""}">${WDS[DAYS[d].getDay()]} ${dd(DAYS[d])}</div>`).join("");
-  for (const pp of people) {
-    cells += `<div class="nm"><i style="--fc:${PEOPLE_COLORS[pp.name] || "#ccc"}"></i>${esc(pp.short)}</div>`;
-    for (const d of ds) {
-      if (onVac(pp.name, d)) { cells += `<div class="c vac" data-n="${esc(pp.name)}" data-d="${d}"><span class="hrs">отпуск</span></div>`; continue; }
-      const ts = tasksOf(pp.name, d).sort((x, y) => y.h - x.h), h = ts.reduce((s2, x) => s2 + x.h, 0);
-      const bar = ts.map(x => `<b style="--pc:${x.p.color};width:${Math.min(100, x.h / 8 * 100)}%" title="${esc(pname(x.p))} · ${x.h} ч"></b>`).join("");
-      cells += `<div class="c${d === S.day ? " today" : ""}${h > 8 ? " over" : ""}" data-n="${esc(pp.name)}" data-d="${d}" title="${esc(pp.short)}: ${h} ч"><div class="bar">${bar}</div><span class="hrs">${h ? fmtHrs(h) : ""}</span></div>`;
-    }
-  }
-  board.innerHTML = `<div class="bhead"><b>Загрузка · ${dd(DAYS[a])}–${dd(DAYS[b])}</b><button type="button" class="bopen">📋 проекты</button></div><div class="ld" style="--nd:${ds.length}">${cells}</div>`;
-  $("#strip").innerHTML = `<button type="button" class="pbtn bopen" style="flex:0 0 auto">📋 Доска</button>` + STAGES.map(s => { const l = work.filter(p => p.stage === s); return l.length ? `<div class="stg">${esc(STAGE_SHORT[s] || s)}</div>` + l.map(cardHTML).join("") : ""; }).join("");
+  const cols = STAGES.map(s2 => { const l = work.filter(p => p.stage === s2); return `<div class="col${l.length > 4 ? " many" : ""}"><h4>${esc(STAGE_SHORT[s2] || s2)} · ${l.length}</h4>${l.map(cardHTML).join("")}</div>`; }).join("");
+  board.innerHTML = `<div class="bhead"><b>Проекты в работе · ${work.length}</b><button type="button" class="bopen">⤢ открыть доску</button></div><div class="bcols">${cols}</div>`;
   if (!dock.hidden) renderDock();
 }
 const fmtHrs = h => (Math.round(h * 10) / 10).toString().replace(".", ",");
-board.addEventListener("click", e => {
-  const c = e.target.closest(".c[data-n]");
-  if (c) { const d = +c.dataset.d; if (d !== S.day) setDay(d); openPerson(c.dataset.n); return; }
-  openDock();
-});
+board.addEventListener("click", e => { if (e.target.closest(".bopen") || !e.target.closest(".card")) openDock(); });
 $("#strip").addEventListener("click", e => { if (e.target.closest(".bopen")) openDock(); });
 
 const dock = $("#dock");
@@ -1437,6 +1458,23 @@ function bigCard(p) {
     <div class="team">${team.length ? team.map(({ pp, h }) => `<i style="--fc:${PEOPLE_COLORS[pp.name] || "#ddd"}">${esc(pp.short)} ${h}</i>`).join("") : `<span class="nobody">сегодня никого</span>`}</div>
     <div class="acts">${canEditAny() ? `<button type="button" data-act="pick">Назначить</button>` : ""}<button type="button" data-act="info">Подробнее</button></div></div>`;
 }
+function hoursTableHTML(list) {
+  const [a, b] = weekOf(S.day), ds = []; for (let d = a; d <= b; d++) ds.push(d);
+  const head = `<tr><th class="pn">Проект / кто</th>${ds.map(d => `<th class="${d === S.day ? "today" : ""}">${WD[DAYS[d].getDay()]}<br>${dd(DAYS[d])}</th>`).join("")}<th>Σ</th></tr>`;
+  const cell = (h, d, cls = "") => `<td class="${cls}${d === S.day ? " today" : ""}${h > 8 && cls !== "pt" ? " ovr" : ""}">${h ? fmtHrs(h) : ""}</td>`;
+  let rows = "";
+  for (const p of list) {
+    const names = Object.keys(p.team || {}).filter(n => ds.some(d => hoursOf(p, n, d) > 0));
+    if (!names.length) continue;
+    const tot = ds.map(d => names.reduce((s2, n) => s2 + hoursOf(p, n, d), 0));
+    rows += `<tr class="prow" data-pid="${p.id}"><td class="pn"><i style="--cc:${p.color}"></i><b>${esc(pname(p))}</b> <span class="dl">${esc(dlText(p).t)}</span></td>${tot.map((h, k) => cell(h, ds[k], "pt")).join("")}<td class="pt">${fmtHrs(tot.reduce((x, y) => x + y, 0))}</td></tr>`;
+    rows += names.map(n => { const hs = ds.map(d => hoursOf(p, n, d)); return `<tr class="mrow" data-n="${esc(n)}"><td class="pn who">${esc(byName[n]?.short || n)}</td>${hs.map((h, k) => cell(h, ds[k])).join("")}<td>${fmtHrs(hs.reduce((x, y) => x + y, 0))}</td></tr>`; }).join("");
+  }
+  const sum = people.map(pp => { const hs = ds.map(d => onVac(pp.name, d) ? -1 : loadOf(pp.name, d)); return `<tr class="srow" data-n="${esc(pp.name)}"><td class="pn"><i style="--cc:${PEOPLE_COLORS[pp.name] || "#ccc"}"></i>${esc(pp.short)}</td>${hs.map((h, k) => h < 0 ? `<td class="vac${ds[k] === S.day ? " today" : ""}">отп.</td>` : cell(h, ds[k])).join("")}<td>${fmtHrs(hs.filter(h => h > 0).reduce((x, y) => x + y, 0))}</td></tr>`; }).join("");
+  return `<p class="dhint" style="margin:0 0 8px">Неделя ${dd(DAYS[a])}–${dd(DAYS[b])} · часы по дням, 8 = полный день. Другая неделя — выбери день внизу.</p>
+    <table class="wtable"><thead>${head}</thead><tbody>${rows || `<tr><td colspan="${ds.length + 2}" class="nobody">на этой неделе часов нет</td></tr>`}</tbody>
+    <tbody class="sum"><tr><th class="pn" colspan="${ds.length + 2}">Итого по людям</th></tr>${sum}</tbody></table>`;
+}
 function renderDock() {
   const list = dockList(), r = role();
   const filters = [["work", "В работе"], ["hot", "Горит"], ["pause", "Пауза"], ["won", "Выиграли"], ["all", "Все"]];
@@ -1444,6 +1482,8 @@ function renderDock() {
   if (DS.view === "kanban") {
     const stages = DS.filter === "work" || DS.filter === "hot" ? STAGES : [...new Set(list.map(p => p.stage || "—"))];
     body = `<div class="kan" style="--n:${stages.length}">${stages.map(s => { const l = list.filter(p => (p.stage || "—") === s).sort((a, b) => dlText(a).diff - dlText(b).diff); return `<div class="kcol"><h4>${esc(STAGE_SHORT[s] || s)} · ${l.length}</h4>${l.map(bigCard).join("") || `<p class="nobody">пусто</p>`}</div>`; }).join("")}</div>`;
+  } else if (DS.view === "hours") {
+    body = hoursTableHTML([...list].sort((a, b) => STAGES.indexOf(a.stage) - STAGES.indexOf(b.stage) || dlText(a).diff - dlText(b).diff));
   } else {
     const rows = [...list].sort((a, b) => dlText(a).diff - dlText(b).diff);
     body = `<table class="ptable"><thead><tr><th></th><th>Проект</th><th>Этап</th><th>Срок</th><th>Менеджер</th><th>Сегодня</th>${r.seeAll || r.manager ? "<th>Бюджет</th>" : ""}<th>Статус</th></tr></thead><tbody>${rows.map(p => {
@@ -1452,7 +1492,7 @@ function renderDock() {
     }).join("")}</tbody></table>`;
   }
   dock.innerHTML = `<header><h2>Доска проектов</h2>
-    <div class="tabs">${[["kanban", "Колонки"], ["table", "Таблица"]].map(([k, l]) => `<button type="button" class="tbtn" data-view="${k}" aria-pressed="${DS.view === k}">${l}</button>`).join("")}</div>
+    <div class="tabs">${[["kanban", "Колонки"], ["hours", "Часы по дням"], ["table", "Список"]].map(([k, l]) => `<button type="button" class="tbtn" data-view="${k}" aria-pressed="${DS.view === k}">${l}</button>`).join("")}</div>
     <div class="tabs">${filters.map(([k, l]) => `<button type="button" class="tbtn" data-f="${k}" aria-pressed="${DS.filter === k}">${l}</button>`).join("")}${r.manager ? `<button type="button" class="tbtn" data-mine aria-pressed="${!!DS.mine}">Мои</button>` : ""}</div>
     <span class="dhint">${canEditAny() ? "Тащи карточку на человечка — доска станет прозрачной" : "Только просмотр"} · ${dd(DAYS[S.day])}</span>
     <button type="button" class="x" aria-label="Закрыть доску">✕</button></header><div class="body">${body}</div>`;
@@ -1468,6 +1508,8 @@ dock.addEventListener("click", e => {
   const pid = +e.target.closest("[data-pid]")?.dataset.pid;
   if (b?.dataset.act === "pick") { closeDock(); startPick(pid); return; }
   if (b?.dataset.act === "info") { closeDock(); openProject(pid); return; }
+  const prow = e.target.closest(".wtable .prow"); if (prow) { closeDock(); openProject(+prow.dataset.pid); return; }
+  const mrow = e.target.closest(".wtable .mrow, .wtable .srow"); if (mrow) { closeDock(); openPerson(mrow.dataset.n); return; }
 });
 
 /* ---------- таблички под ногами, табличка штурма ---------- */
@@ -1699,7 +1741,7 @@ scene.addEventListener("pointerup", e => {
     if (!el && a.t?.k !== "home") { a.forced = null; const [, cy] = toScene(e.clientX, e.clientY); startProgram(a, px, clamp(cy + gh * .55, 0, 299), py); return; }
     a.forced = null;
     const back = destOf(a, a.t || { k: "desk" });
-    if (a.t?.k === "home") a.path = route(px, py, EXIT[0], EXIT[1]); else a.path = route(px, py, back.x, back.y);
+    if (a.t?.k === "home") a.path = viaDoorOut(px, py); else a.path = route(px, py, back.x, back.y);
     setTimeout(() => say(a, ["ну и зачем?", "пойду обратно", "у меня дедлайн вообще-то", "ладно, размялся"][Math.floor(Math.random() * 4)], 1500), 350);
     if (el) dropOn(+el.dataset.pid, a.p.name);
     return;
@@ -1859,7 +1901,7 @@ function openProject(pid) {
     <div style="margin-top:8px" class="row"><span class="chip" style="--c:${p.color}">${esc(p.stage || "—")}</span>${p.type ? `<span class="role">${esc(p.type)}</span>` : ""}</div>
     <h3>Коротко</h3>
     <dl class="kv"><dt>Срок</dt><dd>${p.dl ? dd(p.dl) + (p.tent ? " (предварительно)" : "") + " · " + esc(dl.t) : "без срока"}</dd><dt>Менеджер</dt><dd>${esc(p.manager || "—")}</dd>${budget}<dt>Статус</dt><dd>${esc(p.status || "—")}</dd>${p.chat ? `<dt>Чат</dt><dd>есть в Telegram</dd>` : ""}</dl>
-    <h3>Команда по дням</h3>${rows.length ? `<div class="heat">${head}${heat}</div>` : `<p class="empty">Пока никого. ${canEditAny() ? "Кинь карточку на человечка." : ""}</p>`}
+    <h3>Часы по дням</h3>${rows.length ? `<div class="wwrap">${hoursTableHTML([p])}</div>` : `<p class="empty">Пока никого. ${canEditAny() ? "Кинь карточку на человечка." : ""}</p>`}
     ${canEditAny() ? `<p class="lock">Чтобы поставить человека, перетащи карточку с доски на человечка${innerWidth <= 720 ? " (на телефоне — долгое нажатие на карточку)" : ""}.</p>` : ""}`;
   panel.querySelector(".x").onclick = closePanel;
   panel.hidden = false;
