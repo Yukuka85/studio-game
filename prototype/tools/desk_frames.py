@@ -145,8 +145,35 @@ def prop(rig, img, hand, kind, ang, mdir=1):
         d.rectangle([S((mx - 12, my - 1)), S((mx + 12, my + 5))], fill=tuple(c["band"]) + (255,))
 
 
+# ---------- рука v2: в стиле основного арта ----------
+# Одна сплошная форма (плечо шире, к запястью уже) без стыков, объём в три тона, контур — тёмный оттенок
+# своей же ткани (у кожи — бордовый), крупный кулачок шире запястья, и всё разбито на «пиксели» арта (~5 px).
+STYLE = int(os.environ.get("ARM_STYLE", "2"))
+PIX = 5
+
+def tone(c, k):
+    return tuple(max(0, min(255, round(v * k))) for v in c[:3]) + (255,)
+
+
+def palette(rig):
+    if hasattr(rig, "_pal"): return rig._pal
+    import numpy as np
+    a = np.asarray(rig.fore.convert("RGBA")).reshape(-1, 4).astype(int)
+    m = (a[:, 3] > 200) & (a[:, :3].max(1) > 45)
+    base = tuple(int(v) for v in np.median(a[m][:, :3], 0)) if m.any() else (90, 90, 100)
+    if rig.r.get("sleeve_rgb"): base = tuple(rig.r["sleeve_rgb"])
+    skin = tuple(rig.r.get("skin", [240, 186, 156]))
+    ink = tuple(rig.r.get("skin_ink", [120, 46, 40]))
+    rig._pal = {
+        "cloth": (tone(base, .74), tone(base, 1), tone(base, 1.2), tuple(min(255, max(0, round(v))) for v in (base[0] * .38 + 10, base[1] * .36, base[2] * .4 + 6)) + (255,)),
+        "skin": (tone(skin, .84), tone(skin, 1), tone(skin, 1.08), tuple(ink) + (255,)),
+    }
+    return rig._pal
+
+
 def arm(rig, img, spec):
     """spec: {"from": "near"|"L"|"R", "to": цель, "prop": ..., "bend": ±1}"""
+    if STYLE >= 2: return arm2(rig, img, spec)
     side = spec.get("from", "near")
     sh = tup(rig.r["shoulders"][side])
     if spec["to"] == "mug": hand = rig.mug_hand(side)
@@ -167,6 +194,79 @@ def arm(rig, img, spec):
             d.ellipse([rig.S((b[0] - 4.5, b[1] - 4.5)), rig.S((b[0] + 4.5, b[1] + 4.5))], fill=tuple(rig.r["buttons"]) + (255,))
     hd = rig.hand.resize((rig.hand.width * SS, rig.hand.height * SS), Image.LANCZOS).rotate(-math.degrees(ang), resample=Image.BICUBIC, expand=True)
     hx, hy = rig.S(hand); img.alpha_composite(hd, (int(hx - hd.width / 2), int(hy - hd.height / 2)))
+    if spec.get("prop"): prop(rig, img, hand, spec["prop"], ang, spec.get("mdir", rig.mug_dir(side)))
+    return el
+
+
+def arm2(rig, img, spec):
+    side = spec.get("from", "near")
+    sh = tup(rig.r["shoulders"][side])
+    if spec["to"] == "mug": hand = rig.mug_hand(side)
+    elif spec["to"] == "@sipmid": hand = ((rig.mug_hand(side)[0] + rig.target("@mouth")[0]) / 2 + 8, (rig.mug_hand(side)[1] + rig.target("@mouth")[1]) / 2)
+    else: hand = rig.target(spec["to"])
+    l1, l2 = rig.upper_len, rig.fore_len
+    el = elbow_for(sh, hand, l1, l2, spec.get("bend", -1 if side == "L" else 1))
+    # недотягивается — рука вытянута в сторону цели, кисть на конце (не растягиваем)
+    d = math.hypot(hand[0] - el[0], hand[1] - el[1])
+    if d > l2: hand = (el[0] + (hand[0] - el[0]) / d * l2, el[1] + (hand[1] - el[1]) / d * l2)
+    ang = math.atan2(hand[1] - el[1], hand[0] - el[0]); ux, uy = math.cos(ang), math.sin(ang)
+    T = rig.r.get("arm_w", min(46, rig.fore.height))          # толщина у плеча, px кадра
+    r_sh, r_el, r_wr = T * .5, T * .44, T * .36
+    hr = T * .43                                              # кулачок
+    wrist = (hand[0] - ux * hr * .55, hand[1] - uy * hr * .55)
+    pal = palette(rig); cloth, skin = pal["cloth"], pal["skin"]
+    short = rig.r.get("short_sleeve")                         # доля длины от плеча, где кончается рукав
+    # точки вдоль руки с радиусами
+    pts = []
+    for (a, b, ra, rb) in ((sh, el, r_sh, r_el), (el, wrist, r_el, r_wr)):
+        L = max(1, math.hypot(b[0] - a[0], b[1] - a[1])); n = max(2, int(L / 2))
+        for i in range(n + 1):
+            t = i / n; pts.append(((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t), ra + (rb - ra) * t))
+    total = len(pts)
+    W, H = img.size
+    lay = Image.new("RGBA", (W, H), (0, 0, 0, 0)); dl = ImageDraw.Draw(lay); S = rig.S
+    def disc(p, r, c): x, y = S(p); dl.ellipse([x - r * SS, y - r * SS, x + r * SS, y + r * SS], fill=c)
+    OUT = 5
+    # контур: у бокового вида плечо уходит в тело без обводки (рукав той же ткани)
+    no_ol = int(total * .12) if rig.kind == "side" else 0
+    for i, (p, r) in enumerate(pts):
+        pal_i = skin if short and i / total > short else cloth
+        if i >= no_ol: disc(p, r + OUT, pal_i[3])
+    def ncol(i): return skin if short and i / total > short else cloth
+    for i, (p, r) in enumerate(pts): disc(p, r, ncol(i)[0])                      # тень
+    for i, (p, r) in enumerate(pts):                                              # основной тон, сдвинут к свету (вверх)
+        disc((p[0], p[1] - r * .16), r * .84, ncol(i)[1])
+    for i, (p, r) in enumerate(pts):                                              # тонкий блик по верху
+        if 2 < i < total - 3: disc((p[0], p[1] - r * .55), r * .2, ncol(i)[2])
+    if short:                                                                     # край короткого рукава
+        k = int(total * short); p, r = pts[k]
+        disc(p, r + 2, cloth[3]); disc(p, r * .9, cloth[1])
+    elif rig.r.get("cuff", True):                                                 # манжета у запястья
+        p, r = pts[-3]; disc(p, r + 1, cloth[3]); disc(p, r * .92, cloth[0])
+    if rig.r.get("stripes"):                                                       # клетка: поперечные полоски
+        for j, c in enumerate(rig.r["stripes"]):
+            for i in range(4 + j * 7, total - 4, 13):
+                p, r = pts[i]
+                dl.line([S((p[0] - uy * r * .8, p[1] + ux * r * .8)), S((p[0] + uy * r * .8, p[1] - ux * r * .8))], fill=tuple(c) + (255,), width=3 * SS)
+    if rig.r.get("buttons"):
+        for k in (-14, -24):
+            b = (wrist[0] + ux * k + uy * r_wr * .3, wrist[1] + uy * k - ux * r_wr * .3)
+            disc(b, 4, tuple(rig.r["buttons"]) + (255,))
+    # кулачок: шире запястья, вытянут вдоль руки; большой палец — тёмная чёрточка
+    hx, hy = hand
+    hand_lay = Image.new("RGBA", (int(hr * 4 * SS), int(hr * 4 * SS)), (0, 0, 0, 0)); dh = ImageDraw.Draw(hand_lay)
+    c0 = hand_lay.width / 2
+    def ell(rx, ry, c, ox=0, oy=0): dh.ellipse([c0 + (ox - rx) * SS, c0 + (oy - ry) * SS, c0 + (ox + rx) * SS, c0 + (oy + ry) * SS], fill=c)
+    ell(hr * 1.08 + OUT, hr + OUT, skin[3]); ell(hr * 1.08, hr, skin[0]); ell(hr * .95, hr * .82, skin[1], 0, -hr * .14); ell(hr * .35, hr * .25, skin[2], -hr * .2, -hr * .45)
+    dh.line([c0 + (hr * .1) * SS, c0 - hr * .55 * SS, c0 + hr * .55 * SS, c0 - hr * .05 * SS], fill=skin[3], width=3 * SS)
+    hand_lay = hand_lay.rotate(-math.degrees(ang), resample=Image.BICUBIC)
+    hx2, hy2 = S(hand); lay.alpha_composite(hand_lay, (int(hx2 - hand_lay.width / 2), int(hy2 - hand_lay.height / 2)))
+    # «пиксели» арта: уменьшаем слой руки до сетки и обратно без сглаживания
+    k = SS * PIX
+    small = lay.resize((max(1, W // k), max(1, H // k)), Image.BOX)
+    small.putalpha(small.getchannel("A").point(lambda v: 255 if v > 110 else 0))
+    lay = small.resize((small.width * k, small.height * k), Image.NEAREST)
+    img.alpha_composite(lay)
     if spec.get("prop"): prop(rig, img, hand, spec["prop"], ang, spec.get("mdir", rig.mug_dir(side)))
     return el
 
@@ -249,11 +349,12 @@ def frame(rig, arms):
         for s in arms: arm(rig, img, s)
         return finish(rig, img)
     img = rig.canvas()                    # спиной: руки позади головы — сначала руки, потом тело; лицом — наоборот
+    over = lambda s: s.get("over") or (rig.kind == "front" and (STYLE < 2 or s.get("prop") in ("mug", "phone")))
     for s in arms:
-        if not s.get("over") and rig.kind != "front": arm(rig, img, s)
+        if not over(s): arm(rig, img, s)
     img.alpha_composite(body(rig, erase=[s.get("from") for s in arms]))
     for s in arms:
-        if s.get("over") or rig.kind == "front": arm(rig, img, s)
+        if over(s): arm(rig, img, s)
     return finish(rig, img)
 
 
